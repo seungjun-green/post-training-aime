@@ -1,0 +1,113 @@
+{
+  "decontamination_settings": {
+    "ngram_size": 8,
+    "coverage_threshold": 0.7,
+    "near_miss_min": 0.5,
+    "normalization_version": 2,
+    "cache_directory": "decontamination_v2"
+  },
+  "source_revisions": {
+    "s1k_1.1": "96c411f1fe4c49d20f0e2a1565f61e1a28b0b84d",
+    "dapo_math_17k": "31dd309567e3da778038cc87d868b6097a3ccf68",
+    "aime_2024": "2fe88a2f1091d5048c0f36abc874fb997b3dd99a",
+    "aime_2025": "563bb8404243c5f09de6ec262f2db674fe5bce9b",
+    "aime_2026": "d2de22f3c656b4f56cf8981212186377d1e23bc3",
+    "amc23": "80815d37005feb82cd7f8fbc6901d5d3eff43057",
+    "math_500": "6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be"
+  },
+  "decontamination": {
+    "s1k_1.1": {
+      "original_count": 1000,
+      "removed_count": 4,
+      "remaining_count": 996,
+      "near_miss_count": 0,
+      "removal_counts_by_eval_set": {
+        "aime_2024": 0,
+        "aime_2025": 0,
+        "aime_2026": 0,
+        "amc23": 0,
+        "math_500": 4
+      }
+    },
+    "dapo_math_17k": {
+      "original_count": 14116,
+      "removed_count": 48,
+      "remaining_count": 14068,
+      "near_miss_count": 18,
+      "removal_counts_by_eval_set": {
+        "aime_2024": 0,
+        "aime_2025": 0,
+        "aime_2026": 1,
+        "amc23": 27,
+        "math_500": 20
+      }
+    }
+  },
+  "evaluation_rows": {
+    "aime_2024": 30,
+    "aime_2025": 30,
+    "aime_2026": 30,
+    "amc23": 40,
+    "math_500": 500
+  },
+  "smoke_selected_ids": {
+    "s1k_1.1": [
+      "s1k_1.1:train:991",
+      "s1k_1.1:train:786",
+      "s1k_1.1:train:898",
+      "s1k_1.1:train:544",
+      "s1k_1.1:train:535"
+    ],
+    "dapo_math_17k": [
+      "968cb70e-0d49-466e-9553-0e0919d8d7d1",
+      "48f8bc8b-02cd-4cf8-9831-5e5b45fd8a45",
+      "2453df93-bf32-43a2-9f21-44e860d120a0",
+      "c8d9b251-fc4a-4615-bde3-c49b945f47d1",
+      "7f512713-1a5b-4f99-a93b-285324905510"
+    ],
+    "aime_2024": [
+      86,
+      68,
+      81,
+      67,
+      65
+    ],
+    "aime_2025": [
+      "25",
+      "26",
+      "20",
+      "14",
+      "6"
+    ],
+    "aime_2026": [
+      22,
+      8,
+      11,
+      26,
+      28
+    ],
+    "amc23": [
+      13,
+      14,
+      40,
+      16,
+      28
+    ],
+    "math_500": [
+      "test/prealgebra/1128.json",
+      "test/precalculus/779.json",
+      "test/prealgebra/1512.json",
+      "test/number_theory/634.json",
+      "test/algebra/2476.json"
+    ]
+  },
+  "oversized_paragraphs": [
+    {
+      "id": "s1k_1.1:train:869",
+      "field": "deepseek_thinking_trajectory",
+      "reason": "A paragraph/protected math block has 13453 characters, exceeding 12000; cannot split it at paragraph boundaries without violating Spec 1"
+    }
+  ],
+  "translation_executed": false,
+  "baseline_executed": false
+}

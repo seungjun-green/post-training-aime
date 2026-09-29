@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lg-korean-aime"
+version = "0.1.0"
+description = "Reproducible Korean math data preparation and EXAONE evaluation"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+  "datasets==5.0.1", "huggingface-hub==0.36.2", "PyYAML==6.0.3",
+  "math-verify[antlr4_13_2]==0.9.0",
+]
+
+[project.optional-dependencies]
+translation = ["anthropic==1.8.0"]
+eval = ["vllm==0.14.1", "transformers==4.57.6", "torch==2.9.1"]
+dev = ["pytest==9.1.1", "pytest-asyncio==1.4.0", "nbformat==5.11.1", "ruff==0.16.9"]
+
+[tool.setuptools.packages.find]
+include = ["common*", "pipeline*", "eval*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+"eval/run_eval.py" = ["E402"]

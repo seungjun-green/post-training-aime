@@ -1,0 +1,25 @@
+protocol_version: spec1-v1
+seed: 42
+temperature: 1.0
+top_p: 0.7
+max_new_tokens: 20480
+pass_k: [1, 4, 8, 16, 32]
+engine: vllm
+generation_config: vllm
+allow_hf_for_unsupported_checkpoint: true
+trust_remote_code: true
+dtype: bfloat16
+max_model_len: 32768
+gpu_memory_utilization: 0.90
+max_num_seqs: 32
+tensor_parallel_size: 1
+hf_device: cuda:0
+hardware_name_contains: RTX PRO 6000
+hardware_min_memory_gib: 90
+verify_timeout_seconds: 5
+datasets:
+  aime_2024: {repo: Seungjun/aime_2024-ko, split: train, problem_column: ko_problem, answer_column: answer, n: 32, source_rows: 30}
+  aime_2025: {repo: Seungjun/aime_2025-ko, split: test, problem_column: ko_problem, answer_column: answer, n: 32, source_rows: 30}
+  aime_2026: {repo: Seungjun/aime_2026-ko, split: train, problem_column: ko_problem, answer_column: answer, n: 32, source_rows: 30}
+  amc23: {repo: Seungjun/amc23-ko, split: test, problem_column: ko_question, answer_column: answer, n: 32, source_rows: 40}
+  math_500: {repo: Seungjun/MATH-500-ko, split: test, problem_column: ko_problem, answer_column: answer, n: 4, source_rows: 500}
