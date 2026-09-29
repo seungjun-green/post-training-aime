@@ -20,7 +20,7 @@ def english_eval_cells(markdown, code):
         diagnostic only; it does not affect correctness.
         """),
         code("""
-        REPO_URL = "" # @param {type:"string"}
+        REPO_URL = "https://github.com/seungjun-green/post-training-aime.git" # @param {type:"string"}
         GIT_COMMIT = "" # @param {type:"string"}
         CODE_ROOT = "/content/lg-aime-eval"
         OUTPUT_ROOT = "/content/drive/MyDrive/LG-AIME-English-Eval"
@@ -56,11 +56,14 @@ def english_eval_cells(markdown, code):
         ## Smoke check — five problems, one response each
         Checks actual GPU loading, English generation and scoring. It is not a benchmark result.
         Stored under `OUTPUT_ROOT/smoke/`; full baseline results use `OUTPUT_ROOT/full/`.
-        A default Run all performs this smoke check only. Inspect the generated responses before
+        The smoke cell downloads `smoke_test_result.zip`; send it for review before enabling
+        full evaluation. A default Run all performs this smoke check only. Inspect the responses before
         enabling the full run. Each CLI process releases its GPU memory when it exits.
         """),
         code("""
         subprocess.check_call(EVAL_COMMAND + ["--smoke"], cwd=CODE_ROOT)
+        from google.colab import files
+        files.download(str(Path(OUTPUT_ROOT) / "smoke/archives/stage0/baseline_english/smoke_test_result.zip"))
         """),
         markdown("""
         ## Full English baseline

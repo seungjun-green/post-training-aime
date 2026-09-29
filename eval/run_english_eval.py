@@ -120,9 +120,7 @@ def git_identity():
             "Commit the project before evaluation so runs have a Git revision"
         ) from None
     if git("status", "--porcelain"):
-        raise ValueError(
-            "Project has uncommitted files; commit or use a clean checkout"
-        )
+        raise ValueError("Project has uncommitted files; commit or use a clean checkout")
     return commit
 
 
@@ -217,6 +215,12 @@ def main():
     write_json(destination, {**metadata, **engine_info, "metrics": results})
     print(json.dumps(results, indent=2), flush=True)
     print("Saved:", destination, flush=True)
+    if args.smoke:
+        from eval.smoke_report import write_smoke_archive
+
+        print(
+            "Download for review:", write_smoke_archive(root, args.stage, args.run_name), flush=True
+        )
 
 
 if __name__ == "__main__":

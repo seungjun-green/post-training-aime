@@ -161,3 +161,34 @@ def test_notebook_is_thin_git_launcher_without_embedded_project():
         if cell.cell_type == "code":
             compile(cell.source, "<notebook>", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
             assert not cell.outputs and cell.execution_count is None
+
+
+def test_smoke_archive_contains_review_evidence_only(tmp_path):
+    from zipfile import ZipFile
+
+    from common.io import write_json
+    from eval.smoke_report import write_smoke_archive
+
+    run = tmp_path / "results/stage0"
+    write_json(run / "baseline_english.json", {"mode": "smoke", "metrics": {}})
+    for name in ["baseline_english_manifest.json", "baseline_english_engine.json"]:
+        write_json(run / name, {"model": "test-model"})
+    (run / "baseline_english_generations.jsonl").write_text('{"response":"42"}\n')
+    for name in ["eval_protocol.json", "eval_runtime.json"]:
+        write_json(tmp_path / "results" / name, {})
+    (tmp_path / ".env").write_text("secret-not-for-archive")
+    destination = write_smoke_archive(tmp_path, "stage0", "baseline_english")
+    with ZipFile(destination) as z:
+        assert set(z.namelist()) == {
+            "smoke_test_result.json",
+            "generations.jsonl",
+            "run_manifest.json",
+            "engine.json",
+            "eval_protocol.json",
+            "eval_runtime.json",
+            "README.txt",
+        }
+        assert json.loads(z.read("generations.jsonl"))["response"] == "42"
+    write_json(run / "baseline_english.json", {"mode": "full"})
+    with pytest.raises(ValueError, match="Only a completed smoke"):
+        write_smoke_archive(tmp_path, "stage0", "baseline_english")
