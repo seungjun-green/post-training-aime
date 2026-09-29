@@ -8,7 +8,7 @@ def english_eval_cells(markdown, code):
         Connect to the **RTX PRO 6000 Blackwell 96GB** GPU runtime.
         Add `HF_TOKEN` to Colab Secrets for the private uploaded datasets. No translation API is used.
         All evaluation logic, English prompts, dataset revisions and dependencies live in the Git repo.
-        Set its clone URL and a **full 40-character Git commit** below after pushing the project.
+        The repository URL and a **full 40-character evaluation commit** are preconfigured below.
         For a private Git repo, configure Git authentication in the runtime before cloning;
         do not put tokens in the URL or notebook.
 
@@ -21,7 +21,7 @@ def english_eval_cells(markdown, code):
         """),
         code("""
         REPO_URL = "https://github.com/seungjun-green/post-training-aime.git" # @param {type:"string"}
-        GIT_COMMIT = "" # @param {type:"string"}
+        GIT_COMMIT = "ff0ea8dd1b4471a970082797cc4ff47bfd99fde4" # @param {type:"string"}
         CODE_ROOT = "/content/lg-aime-eval"
         OUTPUT_ROOT = "/content/drive/MyDrive/LG-AIME-English-Eval"
         GPU_ENV = "/content/lg-eval-env"
