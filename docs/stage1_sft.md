@@ -2,21 +2,24 @@
 
 The implementation uses the existing English prompt and the native EXAONE chat template.
 It leaves every frozen evaluation source, config, suite and dependency lock unchanged.
-The full epoch-5 evaluation uses `eval.run_english_eval`. The separate
-`eval.run_stage1_amc` entry point checks the original full baseline protocol and runtime,
-then reuses the existing English engines and scorer on AMC23 only. Subset reports are
-explicitly marked `mode: subset` and cannot establish or replace a full baseline.
+Every epoch is evaluated on all five benchmarks using `eval.run_english_eval`.
+The earlier `eval.run_stage1_amc` utility remains available, but the current notebook
+workflow runs full evaluations only.
 
 ## Colab
 
 Push this implementation to the repository, then open
 [`train_stage1_sft.ipynb`](../notebooks/train_stage1_sft.ipynb) on the RTX PRO 6000 Blackwell
 96GB runtime. Enable the `HF_TOKEN` secret. Run setup and preparation, inspect the mask
-example and data report, then enable `RUN_TRAINING`. Enable `RUN_STAGE1_EVAL` after all
-five checkpoints exist. The two environments run sequentially, releasing GPU memory
-between subprocesses. Do not run setup while training or evaluation is active.
+example and data report, then enable `RUN_TRAINING`. This notebook only trains and saves
+checkpoints. After all five checkpoints exist, open the separate
+[`evaluate_stage1_sft.ipynb`](../notebooks/evaluate_stage1_sft.ipynb), run setup and checkpoint
+checks, then enable `RUN_STAGE1_EVAL`. It evaluates all five benchmarks on each checkpoint
+in order, using the original evaluation environment. Do not run setup while training or
+evaluation is active.
 
-The notebook defaults to preparation only. Training settings live in
+The training notebook defaults to preparation only; the evaluation notebook defaults to
+setup and checks only. Training settings live in
 [`stage1_sft.yaml`](../configs/stage1_sft.yaml), not notebook cells. The baseline Drive root
 must still contain `full/results/eval_protocol.json` and `eval_runtime.json` from the real
 stage-0 run. A ZIP containing only `results/stage0/` is insufficient: preserve the two
@@ -109,25 +112,28 @@ Use the existing evaluation environment, never the training environment:
 ```bash
 python scripts/setup_eval_runtime.py --venv /content/lg-eval-env
 
-/content/lg-eval-env/bin/python -m eval.run_english_eval \
-  --model /content/drive/MyDrive/LG-AIME-Stage1/checkpoints/stage1/sft_s1k/epoch_5 \
-  --stage stage1 --run_name sft_s1k \
-  --output_root /content/drive/MyDrive/LG-AIME-English-Eval-compatible
-
 for epoch in 1 2 3 4 5; do
-  /content/lg-eval-env/bin/python -m eval.run_stage1_amc \
+  run_name="sft_s1k_epoch${epoch}"
+  if [ "$epoch" = 5 ]; then
+    run_name="sft_s1k"
+  fi
+  /content/lg-eval-env/bin/python -m eval.run_english_eval \
     --model "/content/drive/MyDrive/LG-AIME-Stage1/checkpoints/stage1/sft_s1k/epoch_${epoch}" \
-    --run_name "sft_s1k_epoch${epoch}_amc" \
+    --stage stage1 --run_name "$run_name" \
     --output_root /content/drive/MyDrive/LG-AIME-English-Eval-compatible
 done
 ```
 
 The existing English CLI adds `/full/` to the supplied root. Results therefore live in
 `<baseline_root>/full/results/stage1/sft_s1k.json` and
-`sft_s1k_epoch{1..5}_amc.json`, with corresponding generations, manifest and engine files.
-Full evaluation generates 6,160 responses; each AMC run generates 1,280. All retain the
-original sampling, seeds, answer extraction and scoring. The five epoch evaluations are
-descriptive; they do not change the mandated epoch-5 selection.
+`sft_s1k_epoch{1..4}.json`, with corresponding generations, manifest and engine files.
+Epoch 5 keeps the canonical `sft_s1k.json` name. Each full evaluation generates 6,160
+responses across AIME 2024, AIME 2025, AIME 2026, AMC 2023 and MATH-500: 30,800 responses
+for all five epochs. Console logs are saved as `full_eval_epoch{1..5}_console.log` in
+the training Drive root. All runs retain the original sampling, seeds, answer extraction
+and scoring. The five epoch evaluations are descriptive; they do not change the mandated
+epoch-5 selection. Rebuild both Stage 1 notebooks with
+`python scripts/build_stage1_notebook.py` after changing the launcher source.
 
 ## Local validation and remaining GPU work
 

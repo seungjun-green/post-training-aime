@@ -203,19 +203,73 @@ def test_real_sft_trainer_partial_batch_epoch_saves_and_reload(tmp_path):
     assert torch.equal(resumed.model.transformer.wte.weight, trainer.model.transformer.wte.weight)
 
 
-def test_stage1_notebook_is_thin_fresh_and_defaults_to_preparation(monkeypatch):
+@pytest.mark.parametrize("kind", ["train", "evaluate"])
+def test_stage1_notebooks_are_separate_thin_and_fresh(monkeypatch, kind):
     nbformat = pytest.importorskip("nbformat")
     monkeypatch.syspath_prepend(str(ROOT / "scripts"))
-    from build_stage1_notebook import cells
+    from build_stage1_notebook import cells, eval_cells
 
-    notebook = nbformat.read(ROOT / "notebooks/train_stage1_sft.ipynb", as_version=4)
+    notebook = nbformat.read(ROOT / f"notebooks/{kind}_stage1_sft.ipynb", as_version=4)
     nbformat.validate(notebook)
-    assert [c.source for c in notebook.cells] == [c.source for c in cells()]
-    text = "\n".join(c.source for c in notebook.cells)
-    assert "RUN_TRAINING = False" in text and "RUN_STAGE1_EVAL = False" in text
+    expected = cells() if kind == "train" else eval_cells()
+    assert [c.source for c in notebook.cells] == [c.source for c in expected]
+    text = "\n".join(c.source for c in notebook.cells if c.cell_type == "code")
+    if kind == "train":
+        assert "RUN_TRAINING = False" in text and "RUN_STAGE1_EVAL" not in text
+        assert "setup_eval_runtime" not in text and "eval.run_" not in text
+        assert "train/stage1_sft.py" in text
+    else:
+        assert "RUN_STAGE1_EVAL = False" in text and "RUN_TRAINING" not in text
+        assert "setup_stage1_runtime" not in text and "train/stage1_sft.py" not in text
+        assert "eval.run_english_eval" in text and "eval.run_stage1_amc" not in text
     assert "BUNDLE =" not in text
-    assert "eval.run_english_eval" in text and "eval.run_stage1_amc" in text
     for cell in notebook.cells:
         if cell.cell_type == "code":
             compile(cell.source, "stage1_notebook", "exec")
             assert cell.execution_count is None and not cell.outputs
+
+
+def test_evaluation_notebook_launches_all_benchmarks_for_all_five_epochs(tmp_path, monkeypatch):
+    pytest.importorskip("nbformat")
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    from build_stage1_notebook import eval_cells
+
+    train_root, baseline_root = tmp_path / "training", tmp_path / "baseline"
+    for epoch in range(1, 6):
+        folder = train_root / "checkpoints/stage1/sft_s1k" / f"epoch_{epoch}"
+        folder.mkdir(parents=True)
+        (folder / "stage1_checkpoint.json").write_text(json.dumps({
+            "epoch": epoch, "run_identity": "same-run",
+        }))
+    results = baseline_root / "full/results"
+    results.mkdir(parents=True)
+    for name in ["eval_protocol.json", "eval_runtime.json"]:
+        (results / name).write_text("{}")
+    calls = []
+    context = {
+        "Path": Path, "json": json, "CODE_ROOT": str(ROOT),
+        "TRAIN_ROOT": str(train_root), "BASELINE_ROOT": str(baseline_root),
+        "EVAL_ENV": "/test/eval-env", "CONFIG": "configs/stage1_sft.yaml",
+        "run_logged": lambda command, **kwargs: calls.append((command, kwargs)),
+    }
+    sources = [c.source for c in eval_cells() if c.cell_type == "code"]
+    preflight = next(source for source in sources if "run_identities = set()" in source)
+    run = next(source for source in sources if "RUN_STAGE1_EVAL = False" in source)
+    exec(preflight, context)
+    exec(run, context)
+    assert calls == []  # default notebook execution performs no evaluation
+    exec(run.replace("RUN_STAGE1_EVAL = False", "RUN_STAGE1_EVAL = True"), context)
+    assert len(calls) == 5
+    for epoch, (command, kwargs) in enumerate(calls, 1):
+        assert command[1:3] == ["-m", "eval.run_english_eval"]
+        assert Path(command[command.index("--model") + 1]).name == f"epoch_{epoch}"
+        expected_name = "sft_s1k" if epoch == 5 else f"sft_s1k_epoch{epoch}"
+        assert command[command.index("--run_name") + 1] == expected_name
+        assert "--smoke" not in command and "--datasets" not in command
+        assert kwargs["progress_totals"] == {
+            "aime_2024": 30, "aime_2025": 30, "aime_2026": 30, "amc23": 40, "math_500": 500,
+        }
+        assert kwargs["log_path"] == train_root / f"full_eval_epoch{epoch}_console.log"
+    (train_root / "checkpoints/stage1/sft_s1k/epoch_3/stage1_checkpoint.json").unlink()
+    with pytest.raises(FileNotFoundError):
+        exec(preflight, context)

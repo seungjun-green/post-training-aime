@@ -46,10 +46,11 @@ The active notebooks are:
 
 1. [Prepare English datasets](notebooks/prepare_english_datasets.ipynb): CPU decontamination and Hugging Face upload.
 2. [Evaluate the English baseline](notebooks/evaluate_baseline_english.ipynb): clone/update the project, install the GPU runtime, run a five-problem smoke test, then explicitly enable full evaluation. Includes tqdm progress and saved results on Drive.
-3. [Stage 1 SFT](notebooks/train_stage1_sft.ipynb): prepare and inspect assistant-only loss masks, then explicitly enable five-epoch training and checkpoint evaluations in separate environments.
+3. [Stage 1 SFT](notebooks/train_stage1_sft.ipynb): prepare and inspect assistant-only loss masks, then explicitly enable five-epoch training and save every epoch checkpoint. No evaluation runs here.
+4. [Stage 1 evaluation](notebooks/evaluate_stage1_sft.ipynb): evaluate all five saved checkpoints on all five benchmarks, sequentially in the original evaluation environment, for 30,800 sampled responses in total.
 
 Evaluation logic lives in the project rather than the notebook. The preparation notebook still bundles its preparation code. The translation notebooks and old Korean baseline notebook have been removed; `README.md` is retained as historical documentation and contains references to those retired notebooks.
 
 Stage 1 code is implemented, with settings and execution instructions in the [run guide](docs/stage1_sft.md). CPU preparation using the actual pinned EXAONE tokenizer drops 21 examples exceeding 20,480 tokens and keeps 975, resulting in 61 optimizer steps per epoch and 305 total. The original 996 rows contain 370 `deepseek_grade`-incorrect examples; this grade does not filter training. The [data report](docs/stage1_data_report.json) records the exact dropped IDs and token-length statistics.
 
-Next is GPU validation and fine-tuning, followed by evaluation with the same datasets, prompts, sampling settings, scoring, and runtime. The full evaluator is unchanged; AMC epoch evaluations use a separate entry point reusing its generation and scoring. Preserve the stage-0 archive and its parent protocol/runtime manifests for comparisons; no fine-tuned results are reported yet.
+Next is GPU validation and fine-tuning, followed by evaluation with the same datasets, prompts, sampling settings, scoring, and runtime. The full evaluator is unchanged and now supplies all five benchmarks for each epoch. Preserve the stage-0 archive and its parent protocol/runtime manifests for comparisons; no fine-tuned results are reported yet.
