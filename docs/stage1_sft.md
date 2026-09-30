@@ -2,7 +2,8 @@
 
 The implementation uses the existing English prompt and the native EXAONE chat template.
 It leaves every frozen evaluation source, config, suite and dependency lock unchanged.
-Every epoch is evaluated on all five benchmarks using `eval.run_english_eval`.
+Epoch 5 is evaluated first on all five benchmarks using `eval.run_english_eval`.
+Epochs 1–4 are optional and use the same full protocol when enabled.
 The earlier `eval.run_stage1_amc` utility remains available, but the current notebook
 workflow runs full evaluations only.
 
@@ -12,11 +13,19 @@ Push this implementation to the repository, then open
 [`train_stage1_sft.ipynb`](../notebooks/train_stage1_sft.ipynb) on the RTX PRO 6000 Blackwell
 96GB runtime. Enable the `HF_TOKEN` secret. Run setup and preparation, inspect the mask
 example and data report, then enable `RUN_TRAINING`. This notebook only trains and saves
-checkpoints. After all five checkpoints exist, open the separate
+checkpoints. After the final checkpoint exists, open the separate
 [`evaluate_stage1_sft.ipynb`](../notebooks/evaluate_stage1_sft.ipynb), run setup and checkpoint
-checks, then enable `RUN_STAGE1_EVAL`. It evaluates all five benchmarks on each checkpoint
-in order, using the original evaluation environment. Do not run setup while training or
-evaluation is active.
+checks, then enable `RUN_STAGE1_EVAL`. Leave `INCLUDE_EARLIER_EPOCHS = False` in the check
+cell to evaluate epoch 5 only (6,160 responses). To evaluate epochs 1–4 too, set it to
+`True` and rerun that cell; the order becomes 5, 1, 2, 3, 4. All selected checkpoints
+use all five benchmarks and the original evaluation environment. Do not run setup while
+training or evaluation is active.
+
+For an already-running Colab session, interrupt the evaluation cell and apply the updated
+check and evaluation cells using the existing checkout. Skip the Git setup cell to preserve
+the recorded evaluation commit. Saved epoch-1 responses remain in Drive and can be resumed
+later under that same commit. Updating to a different checkout commit prevents resuming
+those saved runs, even if the evaluation code itself is unchanged.
 
 The training notebook defaults to preparation only; the evaluation notebook defaults to
 setup and checks only. Training settings live in
@@ -112,7 +121,8 @@ Use the existing evaluation environment, never the training environment:
 ```bash
 python scripts/setup_eval_runtime.py --venv /content/lg-eval-env
 
-for epoch in 1 2 3 4 5; do
+# Main result only. Optionally use "5 1 2 3 4" to include earlier checkpoints afterward.
+for epoch in 5; do
   run_name="sft_s1k_epoch${epoch}"
   if [ "$epoch" = 5 ]; then
     run_name="sft_s1k"

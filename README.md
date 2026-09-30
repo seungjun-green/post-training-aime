@@ -7,7 +7,7 @@ The current direction keeps `LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct` and uses the 
 The English SFT implementation and separate Colab launchers are ready for GPU validation:
 [`train_stage1_sft.ipynb`](notebooks/train_stage1_sft.ipynb) trains for five epochs and saves
 the checkpoints; [`evaluate_stage1_sft.ipynb`](notebooks/evaluate_stage1_sft.ipynb) evaluates
-all five benchmarks on each of those five checkpoints. See
+all five benchmarks on epoch 5 first, with epochs 1–4 optional. See
 [`stage1_sft.yaml`](configs/stage1_sft.yaml), and the [run guide](docs/stage1_sft.md).
 Real-tokenizer preparation retains 975 of the 996 decontaminated s1K examples after
 dropping 21 over the 20,480-token limit, giving 305 optimizer steps over five epochs.

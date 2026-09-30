@@ -47,7 +47,7 @@ The active notebooks are:
 1. [Prepare English datasets](notebooks/prepare_english_datasets.ipynb): CPU decontamination and Hugging Face upload.
 2. [Evaluate the English baseline](notebooks/evaluate_baseline_english.ipynb): clone/update the project, install the GPU runtime, run a five-problem smoke test, then explicitly enable full evaluation. Includes tqdm progress and saved results on Drive.
 3. [Stage 1 SFT](notebooks/train_stage1_sft.ipynb): prepare and inspect assistant-only loss masks, then explicitly enable five-epoch training and save every epoch checkpoint. No evaluation runs here.
-4. [Stage 1 evaluation](notebooks/evaluate_stage1_sft.ipynb): evaluate all five saved checkpoints on all five benchmarks, sequentially in the original evaluation environment, for 30,800 sampled responses in total.
+4. [Stage 1 evaluation](notebooks/evaluate_stage1_sft.ipynb): evaluate epoch 5 on all five benchmarks by default (6,160 responses). Optionally enable epochs 1–4 afterward, giving the order 5, 1, 2, 3, 4 and 30,800 responses in total. Uses the original evaluation environment.
 
 Evaluation logic lives in the project rather than the notebook. The preparation notebook still bundles its preparation code. The translation notebooks and old Korean baseline notebook have been removed; `README.md` is retained as historical documentation and contains references to those retired notebooks.
 

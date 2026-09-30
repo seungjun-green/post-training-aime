@@ -229,7 +229,7 @@ def test_stage1_notebooks_are_separate_thin_and_fresh(monkeypatch, kind):
             assert cell.execution_count is None and not cell.outputs
 
 
-def test_evaluation_notebook_launches_all_benchmarks_for_all_five_epochs(tmp_path, monkeypatch):
+def test_evaluation_notebook_prioritizes_final_epoch_and_makes_others_optional(tmp_path, monkeypatch):
     pytest.importorskip("nbformat")
     monkeypatch.syspath_prepend(str(ROOT / "scripts"))
     from build_stage1_notebook import eval_cells
@@ -259,8 +259,14 @@ def test_evaluation_notebook_launches_all_benchmarks_for_all_five_epochs(tmp_pat
     exec(run, context)
     assert calls == []  # default notebook execution performs no evaluation
     exec(run.replace("RUN_STAGE1_EVAL = False", "RUN_STAGE1_EVAL = True"), context)
+    assert len(calls) == 1
+    assert calls[0][0][calls[0][0].index("--run_name") + 1] == "sft_s1k"
+    calls.clear()
+    include_earlier = preflight.replace("INCLUDE_EARLIER_EPOCHS = False", "INCLUDE_EARLIER_EPOCHS = True")
+    exec(include_earlier, context)
+    exec(run.replace("RUN_STAGE1_EVAL = False", "RUN_STAGE1_EVAL = True"), context)
     assert len(calls) == 5
-    for epoch, (command, kwargs) in enumerate(calls, 1):
+    for epoch, (command, kwargs) in zip([5, 1, 2, 3, 4], calls, strict=True):
         assert command[1:3] == ["-m", "eval.run_english_eval"]
         assert Path(command[command.index("--model") + 1]).name == f"epoch_{epoch}"
         expected_name = "sft_s1k" if epoch == 5 else f"sft_s1k_epoch{epoch}"
@@ -271,5 +277,10 @@ def test_evaluation_notebook_launches_all_benchmarks_for_all_five_epochs(tmp_pat
         }
         assert kwargs["log_path"] == train_root / f"full_eval_epoch{epoch}_console.log"
     (train_root / "checkpoints/stage1/sft_s1k/epoch_3/stage1_checkpoint.json").unlink()
+    calls.clear()
+    # Missing an optional checkpoint must not block the default epoch-5 evaluation.
+    exec(preflight, context)
+    exec(run.replace("RUN_STAGE1_EVAL = False", "RUN_STAGE1_EVAL = True"), context)
+    assert len(calls) == 1
     with pytest.raises(FileNotFoundError):
-        exec(preflight, context)
+        exec(include_earlier, context)

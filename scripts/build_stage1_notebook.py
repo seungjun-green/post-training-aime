@@ -79,12 +79,14 @@ def cells():
 def eval_cells():
     return [
         markdown("""
-        # Stage 1 — Evaluate all five SFT checkpoints
+        # Stage 1 — Evaluate epoch 5 first
         This notebook evaluates existing checkpoints; it never trains a model.
-        Each of epochs 1–5 is evaluated on **AIME 2024, AIME 2025, AIME 2026, AMC 2023,
+        Epoch 5 is evaluated on **AIME 2024, AIME 2025, AIME 2026, AMC 2023,
         and MATH-500** using the unchanged English evaluator and its frozen settings.
-        That is 630 problems / 6,160 responses per checkpoint, or **30,800 responses** total.
-        Run this after the SFT notebook has saved all five epoch checkpoints to Drive.
+        The default selection is **epoch 5 only: 630 problems / 6,160 responses**.
+        Optionally enable `INCLUDE_EARLIER_EPOCHS` to run epochs 1–4 after epoch 5;
+        evaluating all five checkpoints generates 30,800 responses in total.
+        Run this after the SFT notebook has saved the final checkpoint to Drive.
         Use the **RTX PRO 6000 Blackwell 96GB** runtime and enable the `HF_TOKEN` secret.
         Push the notebook changes to your GitHub repository before running setup.
         Evaluation runs sequentially in the original locked evaluation environment, releasing
@@ -124,13 +126,20 @@ def eval_cells():
         Keep `TRAIN_ROOT` the same as in the training notebook. `BASELINE_ROOT/full/results`
         must contain the original `eval_protocol.json` and `eval_runtime.json`, alongside the
         stage-0 results. The full evaluator checks the frozen protocol and runtime itself.
-        All checkpoints are checked before any evaluation starts. Do not rerun setup during an
+        Selected checkpoints are checked before any evaluation starts. Do not rerun setup during an
         active evaluation. Keep the same code commit when resuming saved evaluation responses.
+        To switch an already-running session to epoch 5, interrupt its evaluation cell and rerun
+        the updated check and evaluation cells below using the existing checkout. Do not rerun
+        Git setup: updating the checkout would change the recorded run identity for saved responses.
         """),
         code("""
         import yaml
+        INCLUDE_EARLIER_EPOCHS = False
         cfg = yaml.safe_load((Path(CODE_ROOT) / CONFIG).read_text())
         epochs = int(cfg["training"]["num_train_epochs"])
+        selected_epochs = [epochs]
+        if INCLUDE_EARLIER_EPOCHS:
+            selected_epochs.extend(range(1, epochs))
         checkpoint_root = Path(TRAIN_ROOT) / "checkpoints" / cfg["stage"] / cfg["run_name"]
         result_root = Path(BASELINE_ROOT) / "full/results"
         for filename in ["eval_protocol.json", "eval_runtime.json"]:
@@ -138,7 +147,7 @@ def eval_cells():
                 raise FileNotFoundError(f"Missing original baseline manifest: {result_root / filename}")
         run_identities = set()
         eval_runs = []
-        for epoch in range(1, epochs + 1):
+        for epoch in selected_epochs:
             checkpoint = checkpoint_root / f"epoch_{epoch}"
             marker = json.loads((checkpoint / "stage1_checkpoint.json").read_text())
             if marker["epoch"] != epoch:
@@ -148,7 +157,7 @@ def eval_cells():
             run_name = cfg["run_name"] if epoch == epochs else f"{cfg['run_name']}_epoch{epoch}"
             eval_runs.append((epoch, checkpoint, run_name))
         if len(run_identities) != 1:
-            raise ValueError("All epoch checkpoints must belong to the same training run")
+            raise ValueError("Selected epoch checkpoints must belong to the same training run")
         suite = json.loads((Path(CODE_ROOT) / "configs/english_eval_suite.json").read_text())
         progress_totals = {name: entry["rows"] for name, entry in suite["datasets"].items()}
         print("Benchmarks:", ", ".join(progress_totals))
@@ -156,9 +165,11 @@ def eval_cells():
             print(f"Epoch {epoch}: {checkpoint} -> {result_root / cfg['stage'] / (run_name + '.json')}")
         """),
         markdown("""
-        ## Full evaluation on each epoch
-        Enable `RUN_STAGE1_EVAL` to evaluate all five checkpoints in order. A default Run all
-        performs setup and checks only. Every epoch uses all five benchmarks, with the same
+        ## Full evaluation — epoch 5, then optional earlier checkpoints
+        Enable `RUN_STAGE1_EVAL` to evaluate epoch 5. Leave `INCLUDE_EARLIER_EPOCHS = False`
+        above for the main result only. To include the earlier checkpoints, set it to `True`
+        and rerun the check cell; the evaluation order will be **5, 1, 2, 3, 4**.
+        A default Run all performs setup and checks only. Every selected epoch uses all five benchmarks, with the same
         prompts, sampling, seeds and scoring as the baseline. Epoch 5 remains the Stage 1 result.
         Reports, raw generations and manifests are saved under `BASELINE_ROOT/full/results/stage1/`:
         `sft_s1k_epoch1.json` through `sft_s1k_epoch4.json`, and `sft_s1k.json` for epoch 5.
@@ -176,7 +187,7 @@ def eval_cells():
                            cwd=CODE_ROOT, log_path=Path(TRAIN_ROOT) / f"full_eval_epoch{epoch}_console.log",
                            progress_totals=progress_totals)
         else:
-            print("Evaluation is off. Enable RUN_STAGE1_EVAL to evaluate all five saved checkpoints.")
+            print("Evaluation is off. Enable RUN_STAGE1_EVAL to run the selected checkpoints, starting with epoch 5.")
         """),
     ]
 
