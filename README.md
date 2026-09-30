@@ -12,7 +12,7 @@ The old Korean baseline notebook remains unchanged. Use the English evaluation e
 
 ## English baseline evaluation (current)
 
-The model is **`LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct`**. Use the thin [`notebooks/evaluate_baseline_english.ipynb`](notebooks/evaluate_baseline_english.ipynb) on the RTX PRO 6000 Blackwell 96GB Colab runtime. The launcher is preconfigured for `https://github.com/seungjun-green/post-training-aime.git` and an exact evaluation commit. Enable the `HF_TOKEN` Colab secret for the private datasets. The notebook clones that exact commit, installs a separate locked Python 3.12 GPU environment, and invokes the project CLI. No project code is embedded in the notebook. A private Git repository requires Git authentication in Colab before cloning; never put credentials in the URL or notebook.
+The model is **`LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct`**. Use the thin [`notebooks/evaluate_baseline_english.ipynb`](notebooks/evaluate_baseline_english.ipynb) on the RTX PRO 6000 Blackwell 96GB Colab runtime. The launcher is preconfigured for `https://github.com/seungjun-green/post-training-aime.git` and clones `main`. Enable the `HF_TOKEN` Colab secret for the private datasets. The notebook records the checked-out commit automatically, installs a separate locked Python 3.12 GPU environment, and invokes the project CLI. Rerunning setup keeps the existing checkout; it does not pull new code into an ongoing run. Settings are plain Python assignments, with no Colab forms or commit field to fill in. No project code is embedded in the notebook. A private Git repository requires Git authentication in Colab before cloning; never put credentials in the URL or notebook.
 
 All five eval datasets are pinned to the actual upload commits from `english_preparation_reports.zip` in `configs/english_eval_suite.json`. Loading checks all 630 original English rows by content digest, row count and native IDs before generation. AIME 2026 uses `problem_idx`, MATH-500 uses `unique_id`, and AMC23 uses the English `question` column. Training datasets are excluded from evaluation.
 
@@ -24,16 +24,18 @@ python scripts/setup_eval_runtime.py --venv /content/lg-eval-env
 # HF_TOKEN must be available in the environment; do not store it in source files.
 # Optional dataset-only validation (no GPU generation).
 /content/lg-eval-env/bin/python -m eval.run_english_eval \
-  --output_root /content/drive/MyDrive/LG-AIME-English-Eval --validate-only
+  --output_root /content/drive/MyDrive/LG-AIME-English-Eval-compatible --validate-only
 
 # Five problems, one response each, written to output_root/smoke/.
 /content/lg-eval-env/bin/python -m eval.run_english_eval \
-  --output_root /content/drive/MyDrive/LG-AIME-English-Eval --smoke
+  --output_root /content/drive/MyDrive/LG-AIME-English-Eval-compatible --smoke
 
 # Full baseline: 630 problems / 6,160 responses, written to output_root/full/.
 /content/lg-eval-env/bin/python -m eval.run_english_eval \
-  --output_root /content/drive/MyDrive/LG-AIME-English-Eval
+  --output_root /content/drive/MyDrive/LG-AIME-English-Eval-compatible
 ```
+
+The base-model default is pinned in `eval/run_english_eval.py` to revision `e949c91dec92095908d34e6b560af77dd0c993f8`, whose loader supports the locked Transformers 4.57.6 environment. LG's newer `ccce25bd39c141fe053e0bc75818a8f5fe962802` loader imports Transformers-5-only `RopeParameters`. The official Hub file hashes match for both weight shards, weight index, model/generation config, tokenizer files, vocabulary and merges; only loader Python files differ. Explicit `--revision` and saved run revisions are still respected. The launcher uses a fresh `LG-AIME-English-Eval-compatible` output root to preserve metadata from failed attempts with the incompatible loader. Do not reuse incompatible run manifests as new baseline results.
 
 `configs/eval_english.yaml` retains temperature 1.0, top-p 0.7, maximum 20,480 completion tokens, n=32 on AIME/AMC and n=4 on MATH-500. `common/english_prompts.py` supplies one English user message with a step-by-step/boxed-answer instruction through the checkpoint's native chat template. No system message is added. The last balanced boxed answer is scored using the existing math-verify scorer. Reports include avg@n, unbiased pass@k for k ≤ n, response lengths and the retained Korean-letter-ratio diagnostic (which never affects correctness).
 

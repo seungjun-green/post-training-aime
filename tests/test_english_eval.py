@@ -154,8 +154,12 @@ def test_notebook_is_thin_git_launcher_without_embedded_project():
     nbformat.validate(nb)
     text = "\n".join(c.source for c in nb.cells if c.cell_type == "code")
     assert "BUNDLE" not in text and "base64" not in text
-    assert '"git", "clone"' in text and '"--detach"' in text
+    assert '"git", "clone", "--branch", "main"' in text
+    assert "GIT_COMMIT" not in text and "@param" not in text
+    assert 'git("rev-parse", "HEAD")' in text
     assert "eval.run_english_eval" in text and "RUN_FULL_EVAL = False" in text
+    assert '"--revision", "e949c91dec92095908d34e6b560af77dd0c993f8"' in text
+    assert "common/process.py" in text
     assert len(text.splitlines()) < 70
     for cell in nb.cells:
         if cell.cell_type == "code":
@@ -192,3 +196,14 @@ def test_smoke_archive_contains_review_evidence_only(tmp_path):
     write_json(run / "baseline_english.json", {"mode": "full"})
     with pytest.raises(ValueError, match="Only a completed smoke"):
         write_smoke_archive(tmp_path, "stage0", "baseline_english")
+
+
+def test_base_model_defaults_to_compatible_loader_without_overriding_resume():
+    from eval.run_english_eval import BASE_MODEL, BASE_MODEL_REVISION, select_model_revision
+
+    assert select_model_revision(BASE_MODEL) == BASE_MODEL_REVISION
+    assert select_model_revision("owner/finetuned") is None
+    saved = {"model": BASE_MODEL, "model_revision": "saved-commit"}
+    assert select_model_revision(BASE_MODEL, saved=saved) == "saved-commit"
+    assert select_model_revision(BASE_MODEL, "explicit-commit", saved) == "explicit-commit"
+    assert select_model_revision("owner/finetuned", saved=saved) is None

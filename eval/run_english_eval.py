@@ -15,6 +15,17 @@ from eval.run_eval import bind_runtime, evaluate, package_versions, resolve_mode
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE_MODEL = "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct"
+# LG's February 2026 loader requires Transformers 5. This earlier revision has
+# identical weights/tokenizer/config and works with requirements-eval.lock.
+BASE_MODEL_REVISION = "e949c91dec92095908d34e6b560af77dd0c993f8"
+
+
+def select_model_revision(model, requested=None, saved=None):
+    if requested is not None:
+        return requested
+    if saved and saved["model"] == model:
+        return saved["model_revision"]
+    return BASE_MODEL_REVISION if model == BASE_MODEL else None
 
 
 def load_eval_sets(config, suite, token=None, loader=None):
@@ -166,9 +177,7 @@ def main():
     run_path = result_dir / f"{args.run_name}_manifest.json"
     saved = json.loads(run_path.read_text()) if run_path.exists() else None
     # Resume the same immutable model even if its upstream main branch has moved.
-    requested_revision = args.revision
-    if saved and requested_revision is None and saved["model"] == args.model:
-        requested_revision = saved["model_revision"]
+    requested_revision = select_model_revision(args.model, args.revision, saved)
     revision, model_digest = resolve_model(args.model, requested_revision, token)
     from eval.engines import check_hardware
     from eval.english_engines import create_engine

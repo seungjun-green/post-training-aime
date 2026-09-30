@@ -1,4 +1,4 @@
-"""Thin Colab launcher: checkout project commit, install, invoke evaluation CLI."""
+"""Thin Colab launcher: clone the project, install, invoke evaluation CLI."""
 
 
 def english_eval_cells(markdown, code):
@@ -8,7 +8,11 @@ def english_eval_cells(markdown, code):
         Connect to the **RTX PRO 6000 Blackwell 96GB** GPU runtime.
         Add `HF_TOKEN` to Colab Secrets for the private uploaded datasets. No translation API is used.
         All evaluation logic, English prompts, dataset revisions and dependencies live in the Git repo.
-        The repository URL and a **full 40-character evaluation commit** are preconfigured below.
+        **Before starting:** push your local evaluation fixes to GitHub yourself. This notebook
+        clones the repository; it cannot use changes that exist only on your computer.
+        Then run these cells in order in a fresh runtime. No manual commit field is needed.
+        The notebook clones `main` from your repository and records the actual commit automatically.
+        Rerunning setup keeps the existing checkout so a running evaluation does not change code.
         For a private Git repo, configure Git authentication in the runtime before cloning;
         do not put tokens in the URL or notebook.
 
@@ -20,37 +24,37 @@ def english_eval_cells(markdown, code):
         diagnostic only; it does not affect correctness.
         """),
         code("""
-        REPO_URL = "https://github.com/seungjun-green/post-training-aime.git" # @param {type:"string"}
-        GIT_COMMIT = "ff0ea8dd1b4471a970082797cc4ff47bfd99fde4" # @param {type:"string"}
+        REPO_URL = "https://github.com/seungjun-green/post-training-aime.git"
         CODE_ROOT = "/content/lg-aime-eval"
-        OUTPUT_ROOT = "/content/drive/MyDrive/LG-AIME-English-Eval"
+        OUTPUT_ROOT = "/content/drive/MyDrive/LG-AIME-English-Eval-compatible"
         GPU_ENV = "/content/lg-eval-env"
         MODEL = "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct"
         """),
         code("""
-        import os, re, subprocess, sys
+        import os, subprocess, sys
         from pathlib import Path
         from google.colab import drive, userdata
         drive.mount("/content/drive")
         os.environ["HF_TOKEN"] = userdata.get("HF_TOKEN")
-        if not REPO_URL or not re.fullmatch(r"[0-9a-fA-F]{40}", GIT_COMMIT):
-            raise ValueError("Set REPO_URL and the full commit SHA pushed to that repository")
         if not Path(CODE_ROOT).exists():
-            subprocess.check_call(["git", "clone", REPO_URL, CODE_ROOT])
+            subprocess.check_call(["git", "clone", "--branch", "main", REPO_URL, CODE_ROOT])
         def git(*args):
             return subprocess.check_output(["git", "-C", CODE_ROOT, *args], text=True).strip()
         if git("remote", "get-url", "origin") != REPO_URL or git("status", "--porcelain"):
             raise ValueError("Checkout differs or has local changes; choose a fresh CODE_ROOT")
-        git("fetch", "origin", GIT_COMMIT)
-        git("checkout", "--detach", GIT_COMMIT)
-        assert git("rev-parse", "HEAD").lower() == GIT_COMMIT.lower()
+        required = ["common/process.py", "eval/smoke_report.py"]
+        if any(not (Path(CODE_ROOT) / name).is_file() for name in required):
+            raise RuntimeError("GitHub is missing the evaluation fixes. Push your local changes, then start a fresh runtime.")
         print("Evaluation code commit:", git("rev-parse", "HEAD"))
         """),
         code("""
         subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "uv==0.11.22"])
         subprocess.check_call([sys.executable, "scripts/setup_eval_runtime.py", "--venv", GPU_ENV], cwd=CODE_ROOT)
+        sys.path.insert(0, CODE_ROOT)
+        from common.process import run_logged
         EVAL_COMMAND = [str(Path(GPU_ENV) / "bin/python"), "-m", "eval.run_english_eval",
-                        "--model", MODEL, "--output_root", OUTPUT_ROOT]
+                        "--model", MODEL, "--revision", "e949c91dec92095908d34e6b560af77dd0c993f8",
+                        "--output_root", OUTPUT_ROOT]
         """),
         markdown("""
         ## Smoke check — five problems, one response each
@@ -58,10 +62,13 @@ def english_eval_cells(markdown, code):
         Stored under `OUTPUT_ROOT/smoke/`; full baseline results use `OUTPUT_ROOT/full/`.
         The smoke cell downloads `smoke_test_result.zip`; send it for review before enabling
         full evaluation. A default Run all performs this smoke check only. Inspect the responses before
-        enabling the full run. Each CLI process releases its GPU memory when it exits.
+        enabling the full run. Subprocess output, including errors, is displayed live and saved
+        to `OUTPUT_ROOT/smoke_console.log`. The traceback includes the last error lines on failure.
+        Each CLI process releases its GPU memory when it exits.
         """),
         code("""
-        subprocess.check_call(EVAL_COMMAND + ["--smoke"], cwd=CODE_ROOT)
+        run_logged(EVAL_COMMAND + ["--smoke"], cwd=CODE_ROOT,
+                   log_path=Path(OUTPUT_ROOT) / "smoke_console.log")
         from google.colab import files
         files.download(str(Path(OUTPUT_ROOT) / "smoke/archives/stage0/baseline_english/smoke_test_result.zip"))
         """),
@@ -71,12 +78,15 @@ def english_eval_cells(markdown, code):
         generations are saved on Drive after every response. Rerun with the same commit,
         configuration and output root to resume completed problems. Partially saved problems
         are regenerated with their original seed and must match saved responses exactly.
-        The model revision is pinned on first run and reused on resume.
+        The base-model revision is pinned in the evaluation code to the loader compatible with
+        the locked Transformers runtime; the original weights and tokenizer are unchanged.
+        The recorded model revision is reused on resume.
         """),
         code("""
-        RUN_FULL_EVAL = False # @param {type:"boolean"}
+        RUN_FULL_EVAL = False
         if RUN_FULL_EVAL:
-            subprocess.check_call(EVAL_COMMAND, cwd=CODE_ROOT)
+            run_logged(EVAL_COMMAND, cwd=CODE_ROOT,
+                       log_path=Path(OUTPUT_ROOT) / "full_console.log")
         else:
             print("Full evaluation is off. Enable RUN_FULL_EVAL after the smoke check.")
         """),
