@@ -35,6 +35,8 @@ def main():
             "import torch, transformers, vllm; "
             "print('torch', torch.__version__, 'CUDA', torch.version.cuda, "
             "'transformers', transformers.__version__, 'vllm', vllm.__version__); "
+            "assert 'ExaoneForCausalLM' in vllm.ModelRegistry.get_supported_archs(), "
+            "'Installed vLLM does not register EXAONE'; "
             "assert torch.cuda.is_available(), 'Connect the CUDA GPU runtime'; "
             "x=torch.ones(1, device='cuda'); print(torch.cuda.get_device_name(0), x.item())",
         ]

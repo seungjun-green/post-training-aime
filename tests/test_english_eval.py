@@ -155,6 +155,7 @@ def test_notebook_is_thin_git_launcher_without_embedded_project():
     text = "\n".join(c.source for c in nb.cells if c.cell_type == "code")
     assert "BUNDLE" not in text and "base64" not in text
     assert '"git", "clone", "--branch", "main"' in text
+    assert '"pull", "--ff-only", "origin", "main"' in text
     assert "GIT_COMMIT" not in text and "@param" not in text
     assert 'git("rev-parse", "HEAD")' in text
     assert "eval.run_english_eval" in text and "RUN_FULL_EVAL = False" in text
@@ -207,3 +208,97 @@ def test_base_model_defaults_to_compatible_loader_without_overriding_resume():
     assert select_model_revision(BASE_MODEL, saved=saved) == "saved-commit"
     assert select_model_revision(BASE_MODEL, "explicit-commit", saved) == "explicit-commit"
     assert select_model_revision("owner/finetuned", saved=saved) is None
+
+
+@pytest.mark.parametrize(
+    "architectures,expected",
+    [
+        (["ExaoneForCausalLM"], "vllm"),
+        (["Unknown", "ExaoneForCausalLM"], "vllm"),
+        (["Unknown"], "hf"),
+    ],
+)
+def test_engine_factory_uses_vllm_0141_registry_api(monkeypatch, architectures, expected):
+    from eval import english_engines
+
+    def load(model, **kwargs):
+        assert model == "model"
+        assert kwargs == {"revision": "revision", "trust_remote_code": True}
+        return SimpleNamespace(architectures=architectures)
+
+    # The pinned registry exposes this method, not is_model_supported().
+    # Use dict_keys, as returned by the real registry.
+    registry = SimpleNamespace(get_supported_archs=lambda: {"ExaoneForCausalLM": object()}.keys())
+    monkeypatch.setitem(sys.modules, "vllm", SimpleNamespace(ModelRegistry=registry))
+    monkeypatch.setitem(
+        sys.modules,
+        "transformers",
+        SimpleNamespace(AutoConfig=SimpleNamespace(from_pretrained=load)),
+    )
+    config = {"trust_remote_code": True, "allow_hf_for_unsupported_checkpoint": True}
+
+    def engine(kind):
+        def create(*args):
+            assert args == ("model", config, "revision")
+            return kind
+
+        return create
+
+    monkeypatch.setattr(english_engines, "EnglishVLLMEngine", engine("vllm"))
+    monkeypatch.setattr(english_engines, "EnglishHFEngine", engine("hf"))
+    result, fallback = english_engines.create_engine("model", config, "revision")
+    assert result == expected
+    assert (fallback is None) == (expected == "vllm")
+    if expected == "vllm":
+
+        def fail(*args):
+            raise RuntimeError("CUDA out of memory")
+
+        monkeypatch.setattr(english_engines, "EnglishVLLMEngine", fail)
+        with pytest.raises(RuntimeError, match="CUDA out of memory"):
+            english_engines.create_engine("model", config, "revision")
+    else:
+        config["allow_hf_for_unsupported_checkpoint"] = False
+        with pytest.raises(ValueError, match="Unsupported checkpoint"):
+            english_engines.create_engine("model", config, "revision")
+
+
+@pytest.mark.parametrize("existing", ["empty", "responses", "completed", "later_stage"])
+def test_protocol_update_preserves_failed_startup_and_never_resets_results(
+    tmp_path, monkeypatch, existing
+):
+    from common.io import write_json
+    from eval import run_english_eval
+
+    _, config, suite = fixture()
+    ids = {"test": [7]}
+    monkeypatch.setattr(run_english_eval, "code_fingerprint", lambda: "old")
+    bind_protocol(tmp_path, config, suite, "stage0", ids, True)
+    results = tmp_path / "results"
+    run = results / "stage0"
+    write_json(run / "baseline_english_manifest.json", {"old": "manifest"})
+    journal = run / "baseline_english_generations.jsonl"
+    journal.write_text('{"text":"answer"}\n' if existing == "responses" else "")
+    if existing == "completed":
+        write_json(run / "baseline_english.json", {"metrics": {}})
+    monkeypatch.setattr(run_english_eval, "code_fingerprint", lambda: "new")
+    if existing == "empty":
+        bind_protocol(tmp_path, config, suite, "stage0", ids, True)
+        archived = list((tmp_path / "failed_startups").glob("*/results"))
+        assert len(archived) == 1
+        assert json.loads((archived[0] / "eval_protocol.json").read_text())["code_digest"] == "old"
+        assert (archived[0] / "stage0/baseline_english_manifest.json").exists()
+        assert json.loads((results / "eval_protocol.json").read_text())["code_digest"] == "new"
+        assert not run.exists()
+    else:
+        with pytest.raises(ValueError, match="protocol changed"):
+            bind_protocol(
+                tmp_path,
+                config,
+                suite,
+                "stage1" if existing == "later_stage" else "stage0",
+                ids,
+                True,
+            )
+        assert journal.exists()
+        assert not (tmp_path / "failed_startups").exists()

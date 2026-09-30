@@ -41,6 +41,8 @@ The base-model default is pinned in `eval/run_english_eval.py` to revision `e949
 
 Results are saved after every response. Repeating the same command resumes completed problems, preserving the recorded model revision even if upstream main moves. Partially completed problems are regenerated with their original seed and must reproduce saved responses before resuming. Frozen code/config/suite and tokenizer/runtime manifests guard later comparisons. Keep the same Git commit when resuming a run; a changed run identity requires a new run name. Smoke results cannot become full benchmark results. The smoke cell downloads `smoke_test_result.zip`, containing raw prompts/responses, scores, token counts, finish reasons, model/dataset revisions, Git commit and runtime settings. Share that ZIP for review before enabling `RUN_FULL_EVAL`; low accuracy on five questions alone does not mean the pipeline is broken.
 
+If a stage0 startup failed before writing any responses, a code/protocol update archives its metadata under `failed_startups/` and starts again in the same output root. Runs containing responses or completed results remain protected against protocol changes. After pushing a fix yourself, run the notebook setup cells before rerunning smoke. Setup clones `main` on a fresh runtime or automatically fast-forwards an existing clean `main` checkout from GitHub.
+
 The run manifest records the Git commit, exact model and dataset revisions, package versions, hardware, English protocol and selected IDs. The Git checkout must be committed and clean. The old Korean evaluator and its notebook are retained separately. No training code is added by this evaluation update.
 
 ## Earlier translation notebooks

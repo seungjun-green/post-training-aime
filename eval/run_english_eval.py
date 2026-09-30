@@ -6,7 +6,9 @@ import os
 import re
 import subprocess
 from copy import deepcopy
+from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 import yaml
 
@@ -101,6 +103,26 @@ def code_fingerprint():
     return digest({p: (ROOT / p).read_text() for p in paths})
 
 
+def archive_empty_startup(root):
+    """Preserve failed startup metadata; never reset a run containing responses."""
+    results = root / "results"
+    manifests = list(results.glob("*/*_manifest.json"))
+    if not manifests:
+        return None
+    if any(p.stat().st_size for p in results.rglob("*_generations.jsonl")):
+        return None
+    if any(
+        not p.name.endswith(("_manifest.json", "_engine.json")) for p in results.glob("*/*.json")
+    ):
+        return None
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S") + "-" + uuid4().hex[:8]
+    destination = root / "failed_startups" / stamp
+    destination.mkdir(parents=True)
+    results.rename(destination / "results")
+    print(f"Archived zero-response startup metadata: {destination}", flush=True)
+    return destination
+
+
 def bind_protocol(root, config, suite, stage, selected_ids, smoke):
     protocol = {
         "config": config,
@@ -112,7 +134,9 @@ def bind_protocol(root, config, suite, stage, selected_ids, smoke):
     path = root / "results/eval_protocol.json"
     if path.exists():
         if json.loads(path.read_text()) != protocol:
-            raise ValueError("English evaluation protocol changed; use a separate output root")
+            if stage != "stage0" or archive_empty_startup(root) is None:
+                raise ValueError("English evaluation protocol changed; use a separate output root")
+            write_json(path, protocol)
     elif stage != "stage0":
         raise ValueError("Run the English stage0 baseline first")
     else:

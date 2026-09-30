@@ -12,7 +12,8 @@ def english_eval_cells(markdown, code):
         clones the repository; it cannot use changes that exist only on your computer.
         Then run these cells in order in a fresh runtime. No manual commit field is needed.
         The notebook clones `main` from your repository and records the actual commit automatically.
-        Rerunning setup keeps the existing checkout so a running evaluation does not change code.
+        Setup clones `main` on a fresh runtime or updates an existing clean `main` checkout.
+        Run setup before evaluation, not while an evaluation process is running.
         For a private Git repo, configure Git authentication in the runtime before cloning;
         do not put tokens in the URL or notebook.
 
@@ -42,9 +43,12 @@ def english_eval_cells(markdown, code):
             return subprocess.check_output(["git", "-C", CODE_ROOT, *args], text=True).strip()
         if git("remote", "get-url", "origin") != REPO_URL or git("status", "--porcelain"):
             raise ValueError("Checkout differs or has local changes; choose a fresh CODE_ROOT")
+        if git("branch", "--show-current") != "main":
+            raise ValueError("Expected the main branch; choose a fresh CODE_ROOT")
+        subprocess.check_call(["git", "-C", CODE_ROOT, "pull", "--ff-only", "origin", "main"])
         required = ["common/process.py", "eval/smoke_report.py"]
         if any(not (Path(CODE_ROOT) / name).is_file() for name in required):
-            raise RuntimeError("GitHub is missing the evaluation fixes. Push your local changes, then start a fresh runtime.")
+            raise RuntimeError("GitHub is missing the evaluation fixes. Push your local changes, then rerun this cell.")
         print("Evaluation code commit:", git("rev-parse", "HEAD"))
         """),
         code("""

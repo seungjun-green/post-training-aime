@@ -71,7 +71,12 @@ def create_engine(model, config, revision):
     checkpoint = AutoConfig.from_pretrained(
         model, revision=revision, trust_remote_code=config["trust_remote_code"]
     )
-    if not ModelRegistry.is_model_supported(checkpoint.architectures or []):
+    architectures = checkpoint.architectures or []
+    if not architectures:
+        raise ValueError("Checkpoint configuration contains no model architecture")
+    # vLLM 0.14.1 exposes get_supported_archs(), not is_model_supported().
+    supported = ModelRegistry.get_supported_archs()
+    if not any(architecture in supported for architecture in architectures):
         if not config["allow_hf_for_unsupported_checkpoint"]:
             raise ValueError(f"Unsupported checkpoint architecture: {checkpoint.architectures}")
         gc.collect()
