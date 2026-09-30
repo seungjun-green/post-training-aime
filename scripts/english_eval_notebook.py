@@ -56,6 +56,9 @@ def english_eval_cells(markdown, code):
         subprocess.check_call([sys.executable, "scripts/setup_eval_runtime.py", "--venv", GPU_ENV], cwd=CODE_ROOT)
         sys.path.insert(0, CODE_ROOT)
         from common.process import run_logged
+        import json
+        suite = json.loads((Path(CODE_ROOT) / "configs/english_eval_suite.json").read_text())
+        FULL_PROGRESS = {name: spec["rows"] for name, spec in suite["datasets"].items()}
         EVAL_COMMAND = [str(Path(GPU_ENV) / "bin/python"), "-m", "eval.run_english_eval",
                         "--model", MODEL, "--revision", "e949c91dec92095908d34e6b560af77dd0c993f8",
                         "--output_root", OUTPUT_ROOT]
@@ -69,10 +72,13 @@ def english_eval_cells(markdown, code):
         enabling the full run. Subprocess output, including errors, is displayed live and saved
         to `OUTPUT_ROOT/smoke_console.log`. The traceback includes the last error lines on failure.
         Each CLI process releases its GPU memory when it exits.
+        A tqdm bar shows completed problems, elapsed time and estimated time remaining.
+        It advances after all answers for a problem have been generated and scored.
         """),
         code("""
         run_logged(EVAL_COMMAND + ["--smoke"], cwd=CODE_ROOT,
-                   log_path=Path(OUTPUT_ROOT) / "smoke_console.log")
+                   log_path=Path(OUTPUT_ROOT) / "smoke_console.log",
+                   progress_totals={name: 1 for name in FULL_PROGRESS})
         from google.colab import files
         files.download(str(Path(OUTPUT_ROOT) / "smoke/archives/stage0/baseline_english/smoke_test_result.zip"))
         """),
@@ -90,7 +96,7 @@ def english_eval_cells(markdown, code):
         RUN_FULL_EVAL = False
         if RUN_FULL_EVAL:
             run_logged(EVAL_COMMAND, cwd=CODE_ROOT,
-                       log_path=Path(OUTPUT_ROOT) / "full_console.log")
+                       log_path=Path(OUTPUT_ROOT) / "full_console.log", progress_totals=FULL_PROGRESS)
         else:
             print("Full evaluation is off. Enable RUN_FULL_EVAL after the smoke check.")
         """),
