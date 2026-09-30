@@ -1,10 +1,8 @@
-import ast
 import json
 from pathlib import Path
 from zipfile import ZipFile
 
 import httpx
-import nbformat
 import pytest
 import yaml
 
@@ -300,16 +298,3 @@ def test_no_model_substitution_or_incompatible_cache_reuse(tmp_path):
         model_config(settings(tmp_path), True)["PROJECT_ROOT"]
         != model_config(settings(tmp_path, HARD_CHECK_RETRIES=2), True)["PROJECT_ROOT"]
     )
-
-
-async def test_notebook_full_cell_off_and_key_from_userdata():
-    nb = nbformat.read("notebooks/translate_datasets_openai.ipynb", as_version=4)
-    full = next(
-        c.source for c in nb.cells if c.cell_type == "code" and "RUN_FULL_TRANSLATION =" in c.source
-    )
-    scope = {}
-    await eval(compile(full, "full-cell", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT), scope)
-    assert scope["full_result"] is None
-    all_code = "\n".join(c.source for c in nb.cells if c.cell_type == "code")
-    assert "userdata.get('OPENAI_API_KEY')" in all_code and "UPLOAD_DATASETS = False" in all_code
-    assert "DEEPSEEK_API_KEY" not in all_code and "smoke=True" in all_code

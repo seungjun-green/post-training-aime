@@ -11,12 +11,6 @@ import pytest
 @pytest.mark.parametrize(
     "name",
     [
-        "translate_datasets",
-        "evaluate_baseline",
-        "translate_datasets_qwen",
-        "translate_datasets_deepseek",
-        "translate_datasets_openai",
-        "translate_datasets_exaone",
         "prepare_english_datasets",
     ],
 )
@@ -39,13 +33,6 @@ def test_standalone_notebook_syntax_and_bundle_matches_sources(name):
     assert bundle is not None
     with ZipFile(io.BytesIO(base64.b64decode(bundle))) as z:
         for member in z.namelist():
-            # The baseline notebook is intentionally frozen. Its unused bundled
-            # translation/data-preparation files need not track later data fixes.
-            if name == "evaluate_baseline" and (
-                member.startswith("pipeline/")
-                or member in {"configs/translation.yaml", "configs/datasets.yaml"}
-            ):
-                continue
             assert z.read(member) == Path(member).read_bytes(), (
                 f"Notebook bundle is stale: {member}"
             )

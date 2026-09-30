@@ -2,6 +2,16 @@
 
 The current direction keeps `LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct` and uses the original English datasets. Translation is no longer part of the active data pipeline; earlier translation notebooks remain available as historical experiments.
 
+## Stage 1 SFT implementation
+
+The English SFT implementation and Colab launcher are ready for GPU validation:
+[`train_stage1_sft.ipynb`](notebooks/train_stage1_sft.ipynb),
+[`stage1_sft.yaml`](configs/stage1_sft.yaml), and the [run guide](docs/stage1_sft.md).
+Real-tokenizer preparation retains 975 of the 996 decontaminated s1K examples after
+dropping 21 over the 20,480-token limit, giving 305 optimizer steps over five epochs.
+The frozen full evaluator is unchanged; a separate AMC-only entry point supplies the
+per-epoch curve. GPU training and Stage 1 accuracy results are still pending.
+
 ## English preparation notebook (current)
 
 Upload [`notebooks/prepare_english_datasets.ipynb`](notebooks/prepare_english_datasets.ipynb) to **Colab CPU**, add a write-capable `HF_TOKEN`, and run the cells in order. It applies the existing normalization-v2, 8-gram, 70% per-eval-problem coverage rule to the two training datasets. It does not deduplicate within/between training datasets. All five eval sets remain unchanged, as do every retained original column and text value.

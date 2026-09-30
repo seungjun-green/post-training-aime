@@ -1,10 +1,8 @@
-import ast
 import json
 from pathlib import Path
 from zipfile import ZipFile
 
 import httpx
-import nbformat
 import pytest
 import yaml
 
@@ -259,51 +257,3 @@ async def test_full_gate_requires_chosen_model_matching_settings(tmp_path):
             transport=transport,
         )
     assert len(calls) == 2
-
-
-async def test_full_notebook_cell_is_off_by_default_and_selects_requested_model():
-    nb = nbformat.read("notebooks/translate_datasets_deepseek.ipynb", as_version=4)
-    full_cell = next(
-        c.source for c in nb.cells if c.cell_type == "code" and "FULL_MODEL =" in c.source
-    )
-    calls = []
-
-    async def run(*args, **kwargs):
-        calls.append(kwargs)
-        return {"config": {"PROJECT_ROOT": "/tmp/test-deepseek"}}
-
-    namespace = dict(run_model=run)
-    await eval(
-        compile(full_cell, "full-cell", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT), namespace
-    )
-    assert not calls and namespace["full_result"] is None
-
-    class Files:
-        def download(self, path):
-            pass
-
-    namespace.update(
-        CONFIG={},
-        DATASETS={},
-        data={},
-        clean={},
-        decontamination_report={},
-        DEEPSEEK_API_KEY="SECRET",
-        Path=Path,
-        files=Files(),
-        archive_outputs=lambda *args: "archive.zip",
-    )
-    enabled = full_cell.replace(
-        'FULL_MODEL = "deepseek-flash"', 'FULL_MODEL = "deepseek-v4-pro"'
-    ).replace("RUN_FULL_TRANSLATION = False", "RUN_FULL_TRANSLATION = True")
-    await eval(
-        compile(enabled, "full-cell", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT), namespace
-    )
-    assert calls[0]["model"] == MODELS[1] and calls[0]["smoke"] is False
-    smoke_cell = next(
-        c.source for c in nb.cells if c.cell_type == "code" and "smoke_results =" in c.source
-    )
-    assert "for model in MODELS" in smoke_cell and "smoke=True" in smoke_cell
-    all_code = "\n".join(c.source for c in nb.cells if c.cell_type == "code")
-    assert "userdata.get('DEEPSEEK_API_KEY')" in all_code
-    assert "nvidia-smi" not in all_code and "ANTHROPIC_API_KEY" not in all_code

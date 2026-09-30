@@ -18,7 +18,7 @@ eval = ["vllm==0.14.1", "transformers==4.57.6", "torch==2.9.1"]
 dev = ["pytest==9.1.1", "pytest-asyncio==1.4.0", "nbformat==5.11.1", "ruff==0.16.9"]
 
 [tool.setuptools.packages.find]
-include = ["common*", "pipeline*", "eval*"]
+include = ["common*", "pipeline*", "eval*", "train*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

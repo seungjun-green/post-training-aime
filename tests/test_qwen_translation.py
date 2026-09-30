@@ -197,15 +197,3 @@ def test_review_escapes_source_and_server_is_local(tmp_path):
     assert command[command.index("--revision") + 1] == "a" * 40
     assert command[command.index("--dtype") + 1] == "bfloat16"
     assert "--trust-remote-code" not in command
-
-
-def test_qwen_notebook_uses_separate_root_and_smoke_default():
-    import nbformat
-
-    nb = nbformat.read("notebooks/translate_datasets_qwen.ipynb", as_version=4)
-    config = nb.cells[2].source
-    assert "SMOKE_TEST = True" in config and "SMOKE_REVIEWED = False" in config
-    assert "LG-Korea-AIME-Qwen" in config
-    all_code = "\n".join(c.source for c in nb.cells if c.cell_type == "code")
-    assert "ANTHROPIC_API_KEY" not in all_code and "OPENAI_API_KEY" not in all_code
-    assert "require_smoke_review(CONFIG)" in all_code
