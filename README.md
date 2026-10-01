@@ -2,7 +2,41 @@
 
 The current direction keeps `LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct` and uses the original English datasets. Translation is no longer part of the active data pipeline; earlier translation notebooks remain available as historical experiments.
 
+## DeepSeek reasoning regeneration notebook
+
+Open [`regenerate_s1_deepseek.ipynb`](notebooks/regenerate_s1_deepseek.ipynb) on **Colab CPU**
+with `HF_TOKEN` (read access) and `DEEPSEEK_API_KEY` in Colab Secrets. The notebook bundles its
+code and config, so no Git push is required. It loads all 996 pinned rows from
+`Seungjun/dp_removed_s1K-1.1` and asks `deepseek-v4-pro` to solve each question independently
+with thinking enabled. The prompt encourages planning, evaluation, reflection, and exploration
+where useful, without a brevity instruction or correctness-based filtering.
+
+- The separate **smoke cell** samples 20 rows with seed 42 and saves/downloads a five-column
+  `comparison.csv`: question, original reasoning, original answer, new reasoning, new answer.
+- The **full-run cell** defaults off. Enable `RUN_FULL_GENERATION` to process all source rows,
+  reusing completed smoke results. Its JSONL export retains every original column and appends
+  `deepseek-v4-pro_reasoning` and `deepseek-v4-pro_answer`.
+- Defaults are 16 concurrent requests, pacing, transient-error retries, and per-response journals
+  on Drive under `LG-AIME-S1-DeepSeek/runs/<model>/<settings-id>/`. Rerunning resumes successful
+  rows and retries failures. Incomplete outputs are flagged separately; partial exports retain
+  all source rows with null generated fields for failures. Settings/code changes create a new run.
+
+Settings and the full prompt are in [`regenerate_s1_deepseek.yaml`](configs/regenerate_s1_deepseek.yaml).
+`max_tokens=131072` is an API output ceiling, not a requested length; reaching it is flagged.
+No SFT length filter is applied to the source or regenerated data. This notebook does not change
+SFT/evaluation code or publish to Hugging Face. Local tests exercise mock API calls, including
+the actual smoke/full notebook cells; live generation must be checked in the Colab smoke run.
+Rebuild with `python scripts/build_regeneration_notebook.py` after changing its bundled code.
+
 ## Stage 1 SFT implementation
+
+For **temperature 1.0 with one answer per problem**, use
+[`evaluate_stage1_sft_temp1.ipynb`](notebooks/evaluate_stage1_sft_temp1.ipynb).
+Its `sample1` profile uses top-p 0.7, all five benchmarks (630 responses), the existing
+20,480-token output limit, and epoch 5 by default; earlier epochs remain optional.
+Results resume under `profiles/sample1/full/results/stage1/`, separate from other profiles.
+No baseline run is required first. Push the profile and notebook changes to the configured
+GitHub repository before running Colab setup, then enable `RUN_STAGE1_EVAL`.
 
 The English SFT implementation and separate Colab launchers are ready for GPU validation:
 [`train_stage1_sft.ipynb`](notebooks/train_stage1_sft.ipynb) trains for five epochs and saves

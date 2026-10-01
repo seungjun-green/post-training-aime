@@ -11,7 +11,7 @@ from common.io import digest, write_json
 from eval.run_english_eval import ROOT, code_fingerprint
 from eval.run_eval import bind_runtime
 
-PROFILE_NAMES = ("greedy", "sample8")
+PROFILE_NAMES = ("greedy", "sample8", "sample1")
 
 
 def load_profile(name, config, execution):

@@ -229,11 +229,11 @@ def test_stage1_notebooks_are_separate_thin_and_fresh(monkeypatch, kind):
             assert cell.execution_count is None and not cell.outputs
 
 
-@pytest.mark.parametrize("profile", ["greedy", "sample8"])
+@pytest.mark.parametrize("profile", ["greedy", "sample8", "sample1"])
 def test_evaluation_notebook_prioritizes_final_epoch_and_makes_others_optional(tmp_path, monkeypatch, profile):
     pytest.importorskip("nbformat")
     monkeypatch.syspath_prepend(str(ROOT / "scripts"))
-    from build_stage1_notebook import eval_cells
+    from build_stage1_notebook import eval_cells, sample1_eval_cells
 
     train_root, baseline_root = tmp_path / "training", tmp_path / "baseline"
     for epoch in range(1, 6):
@@ -250,7 +250,8 @@ def test_evaluation_notebook_prioritizes_final_epoch_and_makes_others_optional(t
         "EVAL_ENV": "/test/eval-env", "CONFIG": "configs/stage1_sft.yaml", "EVAL_PROFILE": profile,
         "run_logged": lambda command, **kwargs: calls.append((command, kwargs)),
     }
-    sources = [c.source for c in eval_cells() if c.cell_type == "code"]
+    factory = sample1_eval_cells if profile == "sample1" else eval_cells
+    sources = [c.source for c in factory() if c.cell_type == "code"]
     preflight = next(source for source in sources if "run_identities = set()" in source)
     run = next(source for source in sources if "RUN_STAGE1_EVAL = False" in source)
     exec(preflight, context)

@@ -1,0 +1,41 @@
+source:
+  repo: Seungjun/dp_removed_s1K-1.1
+  revision: 6d177bf60a195dc3c2b43de6a8eff12405a1c942
+  config: default
+  split: train
+  expected_rows: 996
+  content_digest: 67542f5ef32f9e7f3750a3b9240e54067d7ec7004162ae8d3ac20296929af635
+columns:
+  question: question
+  original_reasoning: deepseek_thinking_trajectory
+  original_answer: deepseek_attempt
+api:
+  base_url: https://api.deepseek.com
+  model: deepseek-v4-pro
+  reasoning_effort: high
+  top_p: 1.0
+  # Operational ceiling for reasoning + answer, NOT a requested target length.
+  # A length-limited response is flagged, never treated as a complete example.
+  max_tokens: 131072
+  concurrency: 16
+  min_request_interval_seconds: 0.2
+  request_timeout_seconds: 1800
+  max_retries: 3
+  retry_initial_seconds: 2
+  retry_max_seconds: 60
+smoke:
+  examples: 20
+  seed: 42
+prompt: |-
+  Solve the supplied problem in English, developing a complete reasoning path and a final answer.
+  Use these reasoning practices where they help solve the problem:
+  - Planning: identify the relevant facts, constraints, and a plan before executing it.
+  - Evaluation: critically check important intermediate deductions and calculations.
+  - Reflection: reconsider and refine an approach when a check reveals a mistake or a dead end.
+  - Exploration: consider alternative approaches when they help resolve uncertainty or make progress.
+  Apply these practices naturally; they are not mandatory headings or a checklist to repeat.
+  Give the mathematical justification needed to support your conclusion. Do not invent mistakes
+  or alternative approaches merely to demonstrate a practice. Let the problem determine the
+  amount of reasoning. Once the solution is established and checked, provide the final answer.
+  Put the final answer inside \boxed{} when the problem has a discrete final answer. For a proof
+  or explanation question, provide the requested proof or conclusion in the final response.

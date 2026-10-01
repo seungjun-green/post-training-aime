@@ -20,6 +20,7 @@ from eval.profiles import (
 
 @pytest.mark.parametrize("profile,total,temperature,math_n,queue", [
     ("greedy", 630, 0.0, 1, 64), ("sample8", 3040, 1.0, 4, 16),
+    ("sample1", 630, 1.0, 1, 64),
 ])
 def test_profiles_only_change_requested_sampling_and_queue(profile, total, temperature, math_n, queue):
     original = yaml.safe_load(Path("configs/eval_english.yaml").read_text())
@@ -30,7 +31,8 @@ def test_profiles_only_change_requested_sampling_and_queue(profile, total, tempe
     assert config["temperature"] == temperature
     assert config["datasets"]["math_500"]["n"] == math_n
     assert sum(s["source_rows"] * s["n"] for s in config["datasets"].values()) == total
-    assert config["pass_k"] == ([1] if profile == "greedy" else [1, 4, 8])
+    assert config["pass_k"] == ([1, 4, 8] if profile == "sample8" else [1])
+    assert config["top_p"] == (1.0 if profile == "greedy" else 0.7)
     assert execution["max_pending_problems"] == queue
     assert config["max_new_tokens"] == 20480
     for key in original:
@@ -42,16 +44,18 @@ def test_profiles_only_change_requested_sampling_and_queue(profile, total, tempe
         }
 
 
-def test_greedy_sampler_receives_one_answer_and_temperature_zero(monkeypatch):
+@pytest.mark.parametrize("temperature,top_p", [(0.0, 1.0), (1.0, 0.7)])
+def test_single_answer_sampler_receives_requested_temperature(monkeypatch, temperature, top_p):
     from eval.batched_generation import generate_problems
 
     engine, _, config, execution = fixture()
-    config["temperature"], config["top_p"], config["pass_k"] = 0.0, 1.0, [1]
+    config["temperature"], config["top_p"], config["pass_k"] = temperature, top_p, [1]
     config["datasets"]["test"]["n"] = 1
     validate_profile_config(config)
     core = install_core(monkeypatch, engine)
     outputs = list(generate_problems(engine, [{"key": 0, "problem": "Q", "n": 1, "seed": 42}], execution))
-    assert core.calls[0][2].temperature == 0.0
+    assert core.calls[0][2].temperature == temperature
+    assert core.calls[0][2].top_p == top_p
     assert core.calls[0][2].n == 1
     assert len(outputs[0][2]) == 1
 
@@ -67,7 +71,7 @@ def test_invalid_profiles_rejected(temperature, n, ks):
         validate_profile_config(config)
 
 
-@pytest.mark.parametrize("profile", ["greedy", "sample8"])
+@pytest.mark.parametrize("profile", ["greedy", "sample8", "sample1"])
 @pytest.mark.parametrize("first_stage", ["stage0", "stage1"])
 def test_either_stage_first_smoke_full_resume_and_profile_isolation(tmp_path, monkeypatch, profile, first_stage):
     from eval import engines, english_engines
@@ -202,3 +206,23 @@ def test_baseline_notebook_passes_profile_and_keeps_default_full_run_off(tmp_pat
     assert not calls
     exec(full.replace("RUN_FULL_EVAL = False", "RUN_FULL_EVAL = True"), context)
     assert len(calls) == 1 and calls[0][0][0] == command
+
+
+def test_temperature_one_sft_notebook_is_fresh_and_defaults_to_sample1(monkeypatch):
+    import nbformat
+
+    monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
+    from build_stage1_notebook import sample1_eval_cells
+
+    nb = nbformat.read("notebooks/evaluate_stage1_sft_temp1.ipynb", as_version=4)
+    nbformat.validate(nb)
+    assert [c.source for c in nb.cells] == [c.source for c in sample1_eval_cells()]
+    context = {}
+    for cell in nb.cells:
+        if cell.cell_type == "code":
+            compile(cell.source, "temperature_one_sft", "exec")
+            assert cell.execution_count is None and cell.outputs == []
+            if 'EVAL_PROFILE = "sample1"' in cell.source:
+                exec(cell.source, context)
+    assert context["EVAL_PROFILE"] == "sample1"
+    assert "defines both options" not in "\n".join(c.source for c in nb.cells)

@@ -200,6 +200,45 @@ def eval_cells():
     ]
 
 
+def sample1_eval_cells():
+    """Reuse the checkpoint/evaluation workflow with single-sample stochastic decoding."""
+    notebook_cells = eval_cells()
+    notebook_cells[0] = markdown("""
+        # Stage 1 — Temperature 1.0, one answer per problem
+        Evaluate **epoch 5** on **AIME 2024, AIME 2025, AIME 2026, AMC 2023, and MATH-500**.
+        The `sample1` profile generates exactly **one answer per problem** at **temperature 1.0**
+        and **top-p 0.7**: **630 responses per checkpoint**, reporting accuracy/pass@1.
+        Top-p matches the original sampled baseline; the output limit remains **20,480 tokens**.
+        This means one sampled answer, not one few-shot demonstration in the prompt.
+
+        Epoch 5 is selected by default. Enable `INCLUDE_EARLIER_EPOCHS` to evaluate epochs 1–4
+        afterward. Existing checkpoints are loaded from Drive; this notebook does not train.
+        Use the **RTX PRO 6000 Blackwell 96GB** runtime and enable the `HF_TOKEN` secret.
+        Push the new notebook, profile config, and profile-loader changes to the configured
+        GitHub repository before running setup. Setup clones/updates that repository.
+
+        Results are saved under `profiles/sample1/`, separately from greedy and sample8 results.
+        A baseline run is **not required** to start. The same `sample1` profile is also available
+        to the baseline CLI when you want a matched comparison. Default Run all performs setup
+        and checkpoint checks; enable `RUN_STAGE1_EVAL` in the final cell to generate answers.
+        """)
+    for cell in notebook_cells:
+        if cell.cell_type == "code":
+            cell.source = cell.source.replace(
+                'EVAL_PROFILE = "greedy" # @param ["greedy", "sample8"]',
+                'EVAL_PROFILE = "sample1"  # temperature 1.0; one answer on every benchmark',
+            )
+        elif cell.source.startswith("## Full evaluation"):
+            cell.source = cell.source.replace(
+                "`configs/eval_profiles.yaml` defines both options and queues up to 64 greedy\n"
+                "or 16 sampled problems to feed the existing 32 GPU response slots.",
+                "`configs/eval_profiles.yaml` defines `sample1`: temperature 1.0, top-p 0.7,\n"
+                "one answer per problem, and up to 64 pending problems for 32 GPU response slots.",
+            )
+    return notebook_cells
+
+
 if __name__ == "__main__":
     write_notebook("train_stage1_sft.ipynb", cells())
     write_notebook("evaluate_stage1_sft.ipynb", eval_cells())
+    write_notebook("evaluate_stage1_sft_temp1.ipynb", sample1_eval_cells())

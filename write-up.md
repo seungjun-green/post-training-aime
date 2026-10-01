@@ -42,6 +42,24 @@ Run provenance:
 
 ## Current workflow and next step
 
+The additional [temperature-1.0 SFT evaluator](notebooks/evaluate_stage1_sft_temp1.ipynb)
+uses `sample1`: one answer per problem on all five benchmarks, top-p 0.7, and the same
+20,480-token output limit. It selects epoch 5 by default and writes separate results under
+`profiles/sample1/`. This permits checking sampled decoding after the greedy evaluation;
+GPU results from this new profile have not yet been collected. Existing evaluation notebooks
+retain their defaults; the new profile is also available through the shared baseline/SFT CLI.
+
+A separate [DeepSeek regeneration notebook](notebooks/regenerate_s1_deepseek.ipynb) now prepares
+alternative reasoning targets from the same 996 decontaminated s1K questions. It uses
+`deepseek-v4-pro` with thinking enabled, encourages Kimi k1.5's planning/evaluation/reflection/
+exploration practices, and imposes no prompt-level brevity target or answer-correctness filter.
+The 20-example random smoke cell exports an old/new comparison CSV. The separate full-run cell
+preserves all source columns and adds `deepseek-v4-pro_reasoning` and `deepseek-v4-pro_answer`.
+Concurrent requests, retry journals, and resumable outputs are saved to Drive. Technical failures
+remain visible separately; partial outputs contain all rows with null generated fields for failures.
+This is data generation only: the existing SFT and evaluation implementations are unchanged.
+Local mocked-API tests passed; no live DeepSeek generation has been run during implementation.
+
 The active notebooks are:
 
 1. [Prepare English datasets](notebooks/prepare_english_datasets.ipynb): CPU decontamination and Hugging Face upload.
