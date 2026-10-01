@@ -2,7 +2,8 @@
 
 The implementation uses the existing English prompt and the native EXAONE chat template.
 It leaves every frozen evaluation source, config, suite and dependency lock unchanged.
-Epoch 5 is evaluated first on all five benchmarks using `eval.run_english_eval`.
+Epoch 5 is evaluated first on all five benchmarks using `eval.run_batched_eval`.
+This runner changes scheduling while reusing the original prompts, model loader and scoring.
 Epochs 1–4 are optional and use the same full protocol when enabled.
 The earlier `eval.run_stage1_amc` utility remains available, but the current notebook
 workflow runs full evaluations only.
@@ -21,11 +22,16 @@ cell to evaluate epoch 5 only (6,160 responses). To evaluate epochs 1–4 too, s
 use all five benchmarks and the original evaluation environment. Do not run setup while
 training or evaluation is active.
 
-For an already-running Colab session, interrupt the evaluation cell and apply the updated
-check and evaluation cells using the existing checkout. Skip the Git setup cell to preserve
-the recorded evaluation commit. Saved epoch-1 responses remain in Drive and can be resumed
-later under that same commit. Updating to a different checkout commit prevents resuming
-those saved runs, even if the evaluation code itself is unchanged.
+To switch an already-running Colab session to continuous batching, stop the evaluation
+cell first. Push the updated repository, reopen the updated evaluation notebook, and run
+setup and checks before enabling evaluation. `REUSE_COMPLETED_LEGACY = True` copies every
+fully completed problem from the matching earlier sequential run into a separate
+`_batched` run. It checks model contents, scientific protocol, datasets, runtime,
+hardware and prompts; a different Git commit is expected for this explicit migration.
+Incomplete problems are regenerated in full. Original results are not edited or deleted.
+Do not resume the old writer while its results are being reused. After starting a batched
+run, retain its code commit, execution config and legacy source files for resume.
+Set `REUSE_COMPLETED_LEGACY = False` before starting a new run to generate everything anew.
 
 The training notebook defaults to preparation only; the evaluation notebook defaults to
 setup and checks only. Training settings live in
@@ -127,23 +133,47 @@ for epoch in 5; do
   if [ "$epoch" = 5 ]; then
     run_name="sft_s1k"
   fi
-  /content/lg-eval-env/bin/python -m eval.run_english_eval \
+  /content/lg-eval-env/bin/python -m eval.run_batched_eval \
     --model "/content/drive/MyDrive/LG-AIME-Stage1/checkpoints/stage1/sft_s1k/epoch_${epoch}" \
-    --stage stage1 --run_name "$run_name" \
+    --stage stage1 --run_name "${run_name}_batched" --reuse_run_name "$run_name" \
+    --execution_config configs/eval_execution.yaml \
     --output_root /content/drive/MyDrive/LG-AIME-English-Eval-compatible
 done
 ```
 
-The existing English CLI adds `/full/` to the supplied root. Results therefore live in
-`<baseline_root>/full/results/stage1/sft_s1k.json` and
-`sft_s1k_epoch{1..4}.json`, with corresponding generations, manifest and engine files.
-Epoch 5 keeps the canonical `sft_s1k.json` name. Each full evaluation generates 6,160
-responses across AIME 2024, AIME 2025, AIME 2026, AMC 2023 and MATH-500: 30,800 responses
-for all five epochs. Console logs are saved as `full_eval_epoch{1..5}_console.log` in
-the training Drive root. All runs retain the original sampling, seeds, answer extraction
-and scoring. The five epoch evaluations are descriptive; they do not change the mandated
-epoch-5 selection. Rebuild both Stage 1 notebooks with
-`python scripts/build_stage1_notebook.py` after changing the launcher source.
+The batched CLI adds `/full/` to the supplied root. Results live in
+`<baseline_root>/full/results/stage1/sft_s1k_batched.json` for epoch 5 and
+`sft_s1k_epoch{1..4}_batched.json` for optional earlier epochs. The original sequential
+files remain intact. Each full evaluation requires 6,160 responses across AIME 2024,
+AIME 2025, AIME 2026, AMC 2023 and MATH-500, minus any responses reused from completed
+problems. Console logs are `full_eval_epoch{1..5}_batched_console.log` in the training
+Drive root. Epoch 5 remains the Stage 1 result; earlier epochs are descriptive.
+
+[`eval_execution.yaml`](../configs/eval_execution.yaml) queues up to 16 problems using
+vLLM 0.14.1's `LLMEngine.add_request`/`step` interface. The existing 32 concurrent GPU
+response limit and 90% memory budget remain unchanged. When one response finishes,
+vLLM can fill its slot from another problem instead of waiting for all responses to
+the current problem. This also lets multiple four-response MATH-500 problems run together.
+The queue is refilled as whole problems finish. Status is printed every 30 seconds
+while generation advances; the notebook bar counts completed problems even when they
+finish out of order. Datasets still run in their original order.
+
+The new `*_problems.jsonl` journal saves all scored responses for a completed problem
+in one durable append. On interruption, complete problems are skipped and a torn final
+append is discarded before regenerating that problem. This avoids mixing old partial
+samples with a changed stochastic replay. The familiar flat `*_generations.jsonl`
+export is written at completion, ordered by dataset/problem/sample. Each run manifest
+records the new runner digest, execution config, and any reused source provenance.
+The baseline's protocol/runtime manifests remain untouched.
+
+All runs retain temperature 1.0, top-p 0.7, sample counts, token limits, prompts, per-problem
+seeds, native n-way child seeding, answer extraction and scoring. Batch composition can
+change exact sampled text; this is an execution change, not a claim of bitwise identity
+with the sequential baseline. No GPU speedup has been measured locally. Generation
+lengths, scoring, Drive I/O and the tail of each dataset can still limit throughput.
+
+Rebuild both Stage 1 notebooks with `python scripts/build_stage1_notebook.py` after
+changing the launcher source. The training notebook is unaffected by this optimization.
 
 ## Local validation and remaining GPU work
 

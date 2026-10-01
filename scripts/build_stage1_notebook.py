@@ -82,7 +82,7 @@ def eval_cells():
         # Stage 1 — Evaluate epoch 5 first
         This notebook evaluates existing checkpoints; it never trains a model.
         Epoch 5 is evaluated on **AIME 2024, AIME 2025, AIME 2026, AMC 2023,
-        and MATH-500** using the unchanged English evaluator and its frozen settings.
+        and MATH-500** using continuous batching with the original scientific settings.
         The default selection is **epoch 5 only: 630 problems / 6,160 responses**.
         Optionally enable `INCLUDE_EARLIER_EPOCHS` to run epochs 1–4 after epoch 5;
         evaluating all five checkpoints generates 30,800 responses in total.
@@ -125,16 +125,17 @@ def eval_cells():
         ## Check saved checkpoints and baseline manifests
         Keep `TRAIN_ROOT` the same as in the training notebook. `BASELINE_ROOT/full/results`
         must contain the original `eval_protocol.json` and `eval_runtime.json`, alongside the
-        stage-0 results. The full evaluator checks the frozen protocol and runtime itself.
-        Selected checkpoints are checked before any evaluation starts. Do not rerun setup during an
-        active evaluation. Keep the same code commit when resuming saved evaluation responses.
-        To switch an already-running session to epoch 5, interrupt its evaluation cell and rerun
-        the updated check and evaluation cells below using the existing checkout. Do not rerun
-        Git setup: updating the checkout would change the recorded run identity for saved responses.
+        stage-0 results. The runner validates those scientific settings and records batching separately.
+        To switch from the old notebook, stop the running evaluation first, then run this updated
+        notebook from setup onward after pushing the code. Completed problems from each matching
+        old run are copied automatically into a separate `_batched` run; incomplete problems are
+        regenerated. Old files remain intact. Do not keep the old evaluation running during reuse.
+        Once a batched run starts, keep its code commit, settings and source files unchanged for resume.
         """),
         code("""
         import yaml
         INCLUDE_EARLIER_EPOCHS = False
+        REUSE_COMPLETED_LEGACY = True
         cfg = yaml.safe_load((Path(CODE_ROOT) / CONFIG).read_text())
         epochs = int(cfg["training"]["num_train_epochs"])
         selected_epochs = [epochs]
@@ -153,15 +154,16 @@ def eval_cells():
             if marker["epoch"] != epoch:
                 raise ValueError(f"Checkpoint epoch mismatch: {checkpoint}")
             run_identities.add(marker["run_identity"])
-            # Preserve the canonical Stage 1 result name for the final checkpoint.
-            run_name = cfg["run_name"] if epoch == epochs else f"{cfg['run_name']}_epoch{epoch}"
-            eval_runs.append((epoch, checkpoint, run_name))
+            # Keep earlier sequential results intact; record the execution change.
+            legacy_name = cfg["run_name"] if epoch == epochs else f"{cfg['run_name']}_epoch{epoch}"
+            run_name = legacy_name + "_batched"
+            eval_runs.append((epoch, checkpoint, run_name, legacy_name))
         if len(run_identities) != 1:
             raise ValueError("Selected epoch checkpoints must belong to the same training run")
         suite = json.loads((Path(CODE_ROOT) / "configs/english_eval_suite.json").read_text())
         progress_totals = {name: entry["rows"] for name, entry in suite["datasets"].items()}
         print("Benchmarks:", ", ".join(progress_totals))
-        for epoch, checkpoint, run_name in eval_runs:
+        for epoch, checkpoint, run_name, legacy_name in eval_runs:
             print(f"Epoch {epoch}: {checkpoint} -> {result_root / cfg['stage'] / (run_name + '.json')}")
         """),
         markdown("""
@@ -172,19 +174,28 @@ def eval_cells():
         A default Run all performs setup and checks only. Every selected epoch uses all five benchmarks, with the same
         prompts, sampling, seeds and scoring as the baseline. Epoch 5 remains the Stage 1 result.
         Reports, raw generations and manifests are saved under `BASELINE_ROOT/full/results/stage1/`:
-        `sft_s1k_epoch1.json` through `sft_s1k_epoch4.json`, and `sft_s1k.json` for epoch 5.
-        Console logs are saved under `TRAIN_ROOT`. Repeating the same commands resumes saved
-        responses, including completed checkpoints; an interrupted checkpoint uses the frozen
-        evaluator's existing resume checks. No AMC-only runs are launched by this notebook.
+        `sft_s1k_epoch1_batched.json` through `sft_s1k_epoch4_batched.json`, and
+        `sft_s1k_batched.json` for epoch 5. Completed problems are durably saved during the run
+        in `*_problems.jsonl`; the standard `*_generations.jsonl` export is written at completion.
+        Console logs are saved under `TRAIN_ROOT`. Repeating the same commands resumes completed
+        problems. `configs/eval_execution.yaml` queues up to 16 problems to feed the existing
+        32 GPU response slots, with status messages every 30 seconds. Exact sampled text can
+        change with batching even though seeds and sampling settings are unchanged.
+        Progress counts completed problems, which can finish out of order within each benchmark.
+        No AMC-only runs are launched by this notebook.
         """),
         code("""
         RUN_STAGE1_EVAL = False
         if RUN_STAGE1_EVAL:
             eval_python = str(Path(EVAL_ENV) / "bin/python")
-            for epoch, checkpoint, run_name in eval_runs:
-                run_logged([eval_python, "-m", "eval.run_english_eval", "--model", str(checkpoint),
-                            "--stage", cfg["stage"], "--run_name", run_name, "--output_root", BASELINE_ROOT],
-                           cwd=CODE_ROOT, log_path=Path(TRAIN_ROOT) / f"full_eval_epoch{epoch}_console.log",
+            for epoch, checkpoint, run_name, legacy_name in eval_runs:
+                command = [eval_python, "-m", "eval.run_batched_eval", "--model", str(checkpoint),
+                           "--stage", cfg["stage"], "--run_name", run_name, "--output_root", BASELINE_ROOT,
+                           "--execution_config", "configs/eval_execution.yaml"]
+                if REUSE_COMPLETED_LEGACY:
+                    command.extend(["--reuse_run_name", legacy_name])
+                run_logged(command,
+                           cwd=CODE_ROOT, log_path=Path(TRAIN_ROOT) / f"full_eval_epoch{epoch}_batched_console.log",
                            progress_totals=progress_totals)
         else:
             print("Evaluation is off. Enable RUN_STAGE1_EVAL to run the selected checkpoints, starting with epoch 5.")

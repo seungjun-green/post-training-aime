@@ -1,0 +1,6 @@
+# Execution only; scientific settings remain in eval_english.yaml.
+version: continuous-v1
+# Queue enough problems to keep all 32 response slots occupied, including MATH-500.
+# This is a CPU-side queue, not a request for 16 * n simultaneous GPU sequences.
+max_pending_problems: 16
+status_interval_seconds: 30

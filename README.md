@@ -11,7 +11,10 @@ all five benchmarks on epoch 5 first, with epochs 1–4 optional. See
 [`stage1_sft.yaml`](configs/stage1_sft.yaml), and the [run guide](docs/stage1_sft.md).
 Real-tokenizer preparation retains 975 of the 996 decontaminated s1K examples after
 dropping 21 over the 20,480-token limit, giving 305 optimizer steps over five epochs.
-The frozen full evaluator is unchanged and is reused for all five epochs.
+The evaluation notebook now uses continuous multi-problem batching with the original
+sampling and scoring settings. It saves separate `_batched` results and can reuse complete
+problems from earlier sequential runs. Execution settings live in
+[`eval_execution.yaml`](configs/eval_execution.yaml); see the [migration instructions](docs/stage1_sft.md#colab).
 GPU training and Stage 1 accuracy results are still pending.
 
 ## English preparation notebook (current)

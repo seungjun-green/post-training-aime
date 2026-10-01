@@ -221,7 +221,7 @@ def test_stage1_notebooks_are_separate_thin_and_fresh(monkeypatch, kind):
     else:
         assert "RUN_STAGE1_EVAL = False" in text and "RUN_TRAINING" not in text
         assert "setup_stage1_runtime" not in text and "train/stage1_sft.py" not in text
-        assert "eval.run_english_eval" in text and "eval.run_stage1_amc" not in text
+        assert "eval.run_batched_eval" in text and "eval.run_stage1_amc" not in text
     assert "BUNDLE =" not in text
     for cell in notebook.cells:
         if cell.cell_type == "code":
@@ -260,22 +260,24 @@ def test_evaluation_notebook_prioritizes_final_epoch_and_makes_others_optional(t
     assert calls == []  # default notebook execution performs no evaluation
     exec(run.replace("RUN_STAGE1_EVAL = False", "RUN_STAGE1_EVAL = True"), context)
     assert len(calls) == 1
-    assert calls[0][0][calls[0][0].index("--run_name") + 1] == "sft_s1k"
+    assert calls[0][0][calls[0][0].index("--run_name") + 1] == "sft_s1k_batched"
     calls.clear()
     include_earlier = preflight.replace("INCLUDE_EARLIER_EPOCHS = False", "INCLUDE_EARLIER_EPOCHS = True")
     exec(include_earlier, context)
     exec(run.replace("RUN_STAGE1_EVAL = False", "RUN_STAGE1_EVAL = True"), context)
     assert len(calls) == 5
     for epoch, (command, kwargs) in zip([5, 1, 2, 3, 4], calls, strict=True):
-        assert command[1:3] == ["-m", "eval.run_english_eval"]
+        assert command[1:3] == ["-m", "eval.run_batched_eval"]
         assert Path(command[command.index("--model") + 1]).name == f"epoch_{epoch}"
         expected_name = "sft_s1k" if epoch == 5 else f"sft_s1k_epoch{epoch}"
-        assert command[command.index("--run_name") + 1] == expected_name
+        assert command[command.index("--run_name") + 1] == expected_name + "_batched"
+        assert command[command.index("--reuse_run_name") + 1] == expected_name
+        assert command[command.index("--execution_config") + 1] == "configs/eval_execution.yaml"
         assert "--smoke" not in command and "--datasets" not in command
         assert kwargs["progress_totals"] == {
             "aime_2024": 30, "aime_2025": 30, "aime_2026": 30, "amc23": 40, "math_500": 500,
         }
-        assert kwargs["log_path"] == train_root / f"full_eval_epoch{epoch}_console.log"
+        assert kwargs["log_path"] == train_root / f"full_eval_epoch{epoch}_batched_console.log"
     (train_root / "checkpoints/stage1/sft_s1k/epoch_3/stage1_checkpoint.json").unlink()
     calls.clear()
     # Missing an optional checkpoint must not block the default epoch-5 evaluation.
