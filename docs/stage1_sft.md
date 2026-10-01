@@ -1,7 +1,8 @@
 # Stage 1: English s1-style SFT
 
 The implementation uses the existing English prompt and the native EXAONE chat template.
-It leaves every frozen evaluation source, config, suite and dependency lock unchanged.
+Training, English prompts, dataset pins, scoring and the dependency lock are unchanged.
+Both baseline and SFT evaluation now offer matching `greedy` and `sample8` profiles.
 Epoch 5 is evaluated first on all five benchmarks using `eval.run_batched_eval`.
 This runner changes scheduling while reusing the original prompts, model loader and scoring.
 Epochs 1–4 are optional and use the same full protocol when enabled.
@@ -17,28 +18,36 @@ example and data report, then enable `RUN_TRAINING`. This notebook only trains a
 checkpoints. After the final checkpoint exists, open the separate
 [`evaluate_stage1_sft.ipynb`](../notebooks/evaluate_stage1_sft.ipynb), run setup and checkpoint
 checks, then enable `RUN_STAGE1_EVAL`. Leave `INCLUDE_EARLIER_EPOCHS = False` in the check
-cell to evaluate epoch 5 only (6,160 responses). To evaluate epochs 1–4 too, set it to
+cell to evaluate epoch 5 only (630 responses for `greedy`, 3,040 for `sample8`). To evaluate epochs 1–4 too, set it to
 `True` and rerun that cell; the order becomes 5, 1, 2, 3, 4. All selected checkpoints
 use all five benchmarks and the original evaluation environment. Do not run setup while
 training or evaluation is active.
 
-To switch an already-running Colab session to continuous batching, stop the evaluation
-cell first. Push the updated repository, reopen the updated evaluation notebook, and run
-setup and checks before enabling evaluation. `REUSE_COMPLETED_LEGACY = True` copies every
-fully completed problem from the matching earlier sequential run into a separate
-`_batched` run. It checks model contents, scientific protocol, datasets, runtime,
-hardware and prompts; a different Git commit is expected for this explicit migration.
-Incomplete problems are regenerated in full. Original results are not edited or deleted.
-Do not resume the old writer while its results are being reused. After starting a batched
-run, retain its code commit, execution config and legacy source files for resume.
-Set `REUSE_COMPLETED_LEGACY = False` before starting a new run to generate everything anew.
+Select the same `EVAL_PROFILE` in the baseline and SFT notebooks:
 
-The training notebook defaults to preparation only; the evaluation notebook defaults to
-setup and checks only. Training settings live in
-[`stage1_sft.yaml`](../configs/stage1_sft.yaml), not notebook cells. The baseline Drive root
-must still contain `full/results/eval_protocol.json` and `eval_runtime.json` from the real
-stage-0 run. A ZIP containing only `results/stage0/` is insufficient: preserve the two
-parent manifests as well. Do not edit/recreate them to bypass a compatibility failure.
+| Profile | Temperature | AIME/AMC answers | MATH-500 answers | Responses/checkpoint | Metrics |
+| --- | --- | --- | --- | --- | --- |
+| `greedy` (default) | 0 | 1 | 1 | 630 | pass@1 / accuracy |
+| `sample8` | 1.0 | 8 | 4 | 3,040 | AIME/AMC pass@1/4/8; MATH-500 pass@1/4; avg@n |
+
+`sample8` retains top-p 0.7; greedy sets top-p 1.0 (sampling truncation is unused).
+Both keep the 20,480-token generation limit and all 630 benchmark questions. Profile
+settings live in [`eval_profiles.yaml`](../configs/eval_profiles.yaml), as overrides
+of the original English config. Training settings remain in `stage1_sft.yaml`.
+
+To switch an active Colab session, stop evaluation, push the updated code, and run the
+updated baseline notebook from setup. Its default Run all performs a five-problem smoke
+check; enable `RUN_FULL_EVAL` for the selected full baseline. Then run the SFT evaluation
+notebook with the same profile. It defaults to setup/checks only; enable `RUN_STAGE1_EVAL`.
+To run both options, complete the baseline and SFT workflow once for each profile.
+
+New profiles start fresh, including the base model. They do not reuse results generated
+under the old 32-sample protocol. Old sequential and `_batched` files remain intact.
+The root contains separate `profiles/greedy/` and `profiles/sample8/` directories, each
+with isolated smoke/full protocols and runtime manifests. The SFT preflight requires the
+selected profile's completed baseline result and parent manifests. Within a run, keep the
+same code commit, profile and settings to resume completed problems. Switching profiles
+requires rerunning the notebook's setup/check cells before evaluation.
 
 ## CLI
 
@@ -122,58 +131,53 @@ bitwise equality across different GPU kernels or hardware.
 
 ## Evaluation
 
-Use the existing evaluation environment, never the training environment:
+Use the existing evaluation environment, never the training environment. These commands
+show the default greedy profile; use `--profile sample8` for the second option on **both**
+base and SFT runs.
 
 ```bash
 python scripts/setup_eval_runtime.py --venv /content/lg-eval-env
 
-# Main result only. Optionally use "5 1 2 3 4" to include earlier checkpoints afterward.
-for epoch in 5; do
-  run_name="sft_s1k_epoch${epoch}"
-  if [ "$epoch" = 5 ]; then
-    run_name="sft_s1k"
-  fi
-  /content/lg-eval-env/bin/python -m eval.run_batched_eval \
-    --model "/content/drive/MyDrive/LG-AIME-Stage1/checkpoints/stage1/sft_s1k/epoch_${epoch}" \
-    --stage stage1 --run_name "${run_name}_batched" --reuse_run_name "$run_name" \
-    --execution_config configs/eval_execution.yaml \
-    --output_root /content/drive/MyDrive/LG-AIME-English-Eval-compatible
-done
+# Base model: add --smoke for a separate five-problem loading/generation check.
+/content/lg-eval-env/bin/python -m eval.run_batched_eval \
+  --model LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct \
+  --stage stage0 --run_name baseline_english --profile greedy \
+  --output_root /content/drive/MyDrive/LG-AIME-English-Eval-compatible
+
+# SFT epoch 5, using the same profile.
+/content/lg-eval-env/bin/python -m eval.run_batched_eval \
+  --model /content/drive/MyDrive/LG-AIME-Stage1/checkpoints/stage1/sft_s1k/epoch_5 \
+  --stage stage1 --run_name sft_s1k --profile greedy \
+  --output_root /content/drive/MyDrive/LG-AIME-English-Eval-compatible
 ```
 
-The batched CLI adds `/full/` to the supplied root. Results live in
-`<baseline_root>/full/results/stage1/sft_s1k_batched.json` for epoch 5 and
-`sft_s1k_epoch{1..4}_batched.json` for optional earlier epochs. The original sequential
-files remain intact. Each full evaluation requires 6,160 responses across AIME 2024,
-AIME 2025, AIME 2026, AMC 2023 and MATH-500, minus any responses reused from completed
-problems. Console logs are `full_eval_epoch{1..5}_batched_console.log` in the training
+The CLI puts profile runs under `<output_root>/profiles/<profile>/full/results/`.
+Baseline results are `stage0/baseline_english.json`; epoch 5 is `stage1/sft_s1k.json`;
+optional earlier epochs use `stage1/sft_s1k_epoch{1..4}.json`. Smoke runs live under the
+profile's `smoke/` directory and never substitute for a full baseline.
+SFT console logs use `full_eval_epoch{epoch}_{profile}_console.log` in the training
 Drive root. Epoch 5 remains the Stage 1 result; earlier epochs are descriptive.
 
-[`eval_execution.yaml`](../configs/eval_execution.yaml) queues up to 16 problems using
-vLLM 0.14.1's `LLMEngine.add_request`/`step` interface. The existing 32 concurrent GPU
-response limit and 90% memory budget remain unchanged. When one response finishes,
-vLLM can fill its slot from another problem instead of waiting for all responses to
-the current problem. This also lets multiple four-response MATH-500 problems run together.
-The queue is refilled as whole problems finish. Status is printed every 30 seconds
-while generation advances; the notebook bar counts completed problems even when they
-finish out of order. Datasets still run in their original order.
+Continuous batching uses vLLM 0.14.1's `LLMEngine.add_request`/`step` interface. The GPU
+still runs up to 32 responses at once with a 90% memory budget. The greedy profile
+queues up to 64 problems so its single-answer requests can fill the GPU; `sample8`
+queues up to 16. The queue is refilled as problems finish. Status is printed every
+30 seconds while generation advances. The notebook bar counts completed problems,
+which can finish out of order within each benchmark; datasets keep their original order.
 
-The new `*_problems.jsonl` journal saves all scored responses for a completed problem
-in one durable append. On interruption, complete problems are skipped and a torn final
-append is discarded before regenerating that problem. This avoids mixing old partial
-samples with a changed stochastic replay. The familiar flat `*_generations.jsonl`
-export is written at completion, ordered by dataset/problem/sample. Each run manifest
-records the new runner digest, execution config, and any reused source provenance.
-The baseline's protocol/runtime manifests remain untouched.
+The `*_problems.jsonl` journal saves all scored responses for a completed problem in one
+durable append. On interruption, complete problems are skipped and a torn final append
+is discarded before regenerating that problem. The standard `*_generations.jsonl` export
+is written at completion, ordered by dataset/problem/sample. Manifests record the
+profile, resolved scientific/execution settings, runner digest, Git commit and runtime.
+Baseline and SFT protocols must match within a profile. Exact text can still vary with
+GPU numerics and batching; no bitwise equivalence or measured speedup is promised.
 
-All runs retain temperature 1.0, top-p 0.7, sample counts, token limits, prompts, per-problem
-seeds, native n-way child seeding, answer extraction and scoring. Batch composition can
-change exact sampled text; this is an execution change, not a claim of bitwise identity
-with the sequential baseline. No GPU speedup has been measured locally. Generation
-lengths, scoring, Drive I/O and the tail of each dataset can still limit throughput.
-
-Rebuild both Stage 1 notebooks with `python scripts/build_stage1_notebook.py` after
-changing the launcher source. The training notebook is unaffected by this optimization.
+The original `eval.run_english_eval` and the no-profile `eval.run_batched_eval` path remain
+available for legacy settings. Existing batched runs must use their recorded Git commit
+to resume. Named profiles reject legacy response imports instead of mixing protocols.
+Rebuild the Stage 1 notebooks with `python scripts/build_stage1_notebook.py`; the baseline launcher source lives in `scripts/english_eval_notebook.py`.
+The SFT training notebook is unchanged.
 
 ## Local validation and remaining GPU work
 
@@ -183,6 +187,10 @@ preparation with the real pinned EXAONE tokenizer retained **975** examples and 
 p99 19,344.86; maximum 20,341. The original 996 rows include **370** incorrect grades.
 The resulting schedule is **61 steps/epoch, 305 steps total** (the last accumulation
 group has 15 examples). See [`stage1_data_report.json`](stage1_data_report.json).
+
+Profile tests cover temperature-0 generation settings, exact sample counts, baseline/SFT
+protocol matching, isolated smoke/full outputs, and interruption/resume behavior with a
+simulated vLLM engine. Real GPU smoke tests for the new profiles remain to be run in Colab.
 
 Local tests cover label boundaries, strict overlength dropping, grade retention, padding,
 AMC protocol preservation and evaluation resumption. A tiny CPU training test exercises

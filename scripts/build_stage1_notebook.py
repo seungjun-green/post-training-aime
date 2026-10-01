@@ -1,4 +1,4 @@
-"""Build separate Stage 1 training and evaluation launchers; leave Spec 1 untouched."""
+"""Build separate Stage 1 training and evaluation launchers."""
 
 from build_notebooks import code, markdown, write_notebook
 
@@ -82,10 +82,13 @@ def eval_cells():
         # Stage 1 — Evaluate epoch 5 first
         This notebook evaluates existing checkpoints; it never trains a model.
         Epoch 5 is evaluated on **AIME 2024, AIME 2025, AIME 2026, AMC 2023,
-        and MATH-500** using continuous batching with the original scientific settings.
-        The default selection is **epoch 5 only: 630 problems / 6,160 responses**.
-        Optionally enable `INCLUDE_EARLIER_EPOCHS` to run epochs 1–4 after epoch 5;
-        evaluating all five checkpoints generates 30,800 responses in total.
+        and MATH-500** using continuous batching. Choose the same `EVAL_PROFILE` as your baseline:
+        - **greedy** (default): temperature 0, one answer per problem, **630 responses**, pass@1.
+        - **sample8**: temperature 1.0/top-p 0.7, eight answers per AIME/AMC problem and
+          four per MATH-500 problem, **3,040 responses**. Reports pass@1/4/8 on AIME/AMC
+          and pass@1/4 on MATH-500.
+        The default checkpoint selection is **epoch 5 only**. Optionally enable
+        `INCLUDE_EARLIER_EPOCHS` to run epochs 1–4 after epoch 5.
         Run this after the SFT notebook has saved the final checkpoint to Drive.
         Use the **RTX PRO 6000 Blackwell 96GB** runtime and enable the `HF_TOKEN` secret.
         Push the notebook changes to your GitHub repository before running setup.
@@ -99,6 +102,7 @@ def eval_cells():
         BASELINE_ROOT = "/content/drive/MyDrive/LG-AIME-English-Eval-compatible"
         EVAL_ENV = "/content/lg-eval-env"
         CONFIG = "configs/stage1_sft.yaml"
+        EVAL_PROFILE = "greedy" # @param ["greedy", "sample8"]
         """),
         code("""
         import os, subprocess, sys, json
@@ -123,29 +127,28 @@ def eval_cells():
         """),
         markdown("""
         ## Check saved checkpoints and baseline manifests
-        Keep `TRAIN_ROOT` the same as in the training notebook. `BASELINE_ROOT/full/results`
-        must contain the original `eval_protocol.json` and `eval_runtime.json`, alongside the
-        stage-0 results. The runner validates those scientific settings and records batching separately.
-        To switch from the old notebook, stop the running evaluation first, then run this updated
-        notebook from setup onward after pushing the code. Completed problems from each matching
-        old run are copied automatically into a separate `_batched` run; incomplete problems are
-        regenerated. Old files remain intact. Do not keep the old evaluation running during reuse.
-        Once a batched run starts, keep its code commit, settings and source files unchanged for resume.
+        Keep `TRAIN_ROOT` the same as in the training notebook. First run the updated baseline
+        notebook with the selected profile. Its full result and manifests must exist under
+        `BASELINE_ROOT/profiles/<profile>/full/results/`. The runner enforces matching sampling,
+        prompts, datasets, scoring and runtime for baseline/SFT comparisons within each profile.
+        To switch from an older notebook, stop evaluation, push the updated code, and run setup.
+        New profiles start fresh and leave previous 32-sample results intact; old responses are
+        not imported. Once a run starts, keep its code commit and settings unchanged for resume.
         """),
         code("""
         import yaml
+        from eval.profiles import profile_root
         INCLUDE_EARLIER_EPOCHS = False
-        REUSE_COMPLETED_LEGACY = True
         cfg = yaml.safe_load((Path(CODE_ROOT) / CONFIG).read_text())
         epochs = int(cfg["training"]["num_train_epochs"])
         selected_epochs = [epochs]
         if INCLUDE_EARLIER_EPOCHS:
             selected_epochs.extend(range(1, epochs))
         checkpoint_root = Path(TRAIN_ROOT) / "checkpoints" / cfg["stage"] / cfg["run_name"]
-        result_root = Path(BASELINE_ROOT) / "full/results"
-        for filename in ["eval_protocol.json", "eval_runtime.json"]:
+        result_root = profile_root(BASELINE_ROOT, EVAL_PROFILE) / "full/results"
+        for filename in ["eval_protocol.json", "eval_runtime.json", "stage0/baseline_english.json"]:
             if not (result_root / filename).is_file():
-                raise FileNotFoundError(f"Missing original baseline manifest: {result_root / filename}")
+                raise FileNotFoundError(f"Run the matching full baseline first; missing: {result_root / filename}")
         run_identities = set()
         eval_runs = []
         for epoch in selected_epochs:
@@ -154,16 +157,15 @@ def eval_cells():
             if marker["epoch"] != epoch:
                 raise ValueError(f"Checkpoint epoch mismatch: {checkpoint}")
             run_identities.add(marker["run_identity"])
-            # Keep earlier sequential results intact; record the execution change.
-            legacy_name = cfg["run_name"] if epoch == epochs else f"{cfg['run_name']}_epoch{epoch}"
-            run_name = legacy_name + "_batched"
-            eval_runs.append((epoch, checkpoint, run_name, legacy_name))
+            # Profiles use separate directories for baseline and SFT comparisons.
+            run_name = cfg["run_name"] if epoch == epochs else f"{cfg['run_name']}_epoch{epoch}"
+            eval_runs.append((epoch, checkpoint, run_name))
         if len(run_identities) != 1:
             raise ValueError("Selected epoch checkpoints must belong to the same training run")
         suite = json.loads((Path(CODE_ROOT) / "configs/english_eval_suite.json").read_text())
         progress_totals = {name: entry["rows"] for name, entry in suite["datasets"].items()}
         print("Benchmarks:", ", ".join(progress_totals))
-        for epoch, checkpoint, run_name, legacy_name in eval_runs:
+        for epoch, checkpoint, run_name in eval_runs:
             print(f"Epoch {epoch}: {checkpoint} -> {result_root / cfg['stage'] / (run_name + '.json')}")
         """),
         markdown("""
@@ -173,13 +175,12 @@ def eval_cells():
         and rerun the check cell; the evaluation order will be **5, 1, 2, 3, 4**.
         A default Run all performs setup and checks only. Every selected epoch uses all five benchmarks, with the same
         prompts, sampling, seeds and scoring as the baseline. Epoch 5 remains the Stage 1 result.
-        Reports, raw generations and manifests are saved under `BASELINE_ROOT/full/results/stage1/`:
-        `sft_s1k_epoch1_batched.json` through `sft_s1k_epoch4_batched.json`, and
-        `sft_s1k_batched.json` for epoch 5. Completed problems are durably saved during the run
+        Reports, raw generations and manifests are saved under `BASELINE_ROOT/profiles/<profile>/full/results/stage1/`:
+        `sft_s1k_epoch1.json` through `sft_s1k_epoch4.json`, and `sft_s1k.json` for epoch 5. Completed problems are durably saved during the run
         in `*_problems.jsonl`; the standard `*_generations.jsonl` export is written at completion.
         Console logs are saved under `TRAIN_ROOT`. Repeating the same commands resumes completed
-        problems. `configs/eval_execution.yaml` queues up to 16 problems to feed the existing
-        32 GPU response slots, with status messages every 30 seconds. Exact sampled text can
+        problems. `configs/eval_profiles.yaml` defines both options and queues up to 64 greedy
+        or 16 sampled problems to feed the existing 32 GPU response slots. Exact sampled text can
         change with batching even though seeds and sampling settings are unchanged.
         Progress counts completed problems, which can finish out of order within each benchmark.
         No AMC-only runs are launched by this notebook.
@@ -188,14 +189,13 @@ def eval_cells():
         RUN_STAGE1_EVAL = False
         if RUN_STAGE1_EVAL:
             eval_python = str(Path(EVAL_ENV) / "bin/python")
-            for epoch, checkpoint, run_name, legacy_name in eval_runs:
+            for epoch, checkpoint, run_name in eval_runs:
                 command = [eval_python, "-m", "eval.run_batched_eval", "--model", str(checkpoint),
                            "--stage", cfg["stage"], "--run_name", run_name, "--output_root", BASELINE_ROOT,
+                           "--profile", EVAL_PROFILE,
                            "--execution_config", "configs/eval_execution.yaml"]
-                if REUSE_COMPLETED_LEGACY:
-                    command.extend(["--reuse_run_name", legacy_name])
                 run_logged(command,
-                           cwd=CODE_ROOT, log_path=Path(TRAIN_ROOT) / f"full_eval_epoch{epoch}_batched_console.log",
+                           cwd=CODE_ROOT, log_path=Path(TRAIN_ROOT) / f"full_eval_epoch{epoch}_{EVAL_PROFILE}_console.log",
                            progress_totals=progress_totals)
         else:
             print("Evaluation is off. Enable RUN_STAGE1_EVAL to run the selected checkpoints, starting with epoch 5.")

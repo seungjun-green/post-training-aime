@@ -11,10 +11,10 @@ all five benchmarks on epoch 5 first, with epochs 1–4 optional. See
 [`stage1_sft.yaml`](configs/stage1_sft.yaml), and the [run guide](docs/stage1_sft.md).
 Real-tokenizer preparation retains 975 of the 996 decontaminated s1K examples after
 dropping 21 over the 20,480-token limit, giving 305 optimizer steps over five epochs.
-The evaluation notebook now uses continuous multi-problem batching with the original
-sampling and scoring settings. It saves separate `_batched` results and can reuse complete
-problems from earlier sequential runs. Execution settings live in
-[`eval_execution.yaml`](configs/eval_execution.yaml); see the [migration instructions](docs/stage1_sft.md#colab).
+Both evaluation notebooks offer `greedy` (temperature 0, one answer) and `sample8`
+(temperature 1.0, eight AIME/AMC answers and four MATH-500 answers). They use continuous
+batching and separate profile results. See [`eval_profiles.yaml`](configs/eval_profiles.yaml)
+and the [migration instructions](docs/stage1_sft.md#colab).
 GPU training and Stage 1 accuracy results are still pending.
 
 ## English preparation notebook (current)
@@ -27,38 +27,53 @@ The old Korean baseline notebook remains unchanged. Use the English evaluation e
 
 ## English baseline evaluation (current)
 
-The model is **`LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct`**. Use the thin [`notebooks/evaluate_baseline_english.ipynb`](notebooks/evaluate_baseline_english.ipynb) on the RTX PRO 6000 Blackwell 96GB Colab runtime. The launcher is preconfigured for `https://github.com/seungjun-green/post-training-aime.git` and clones `main`. Enable the `HF_TOKEN` Colab secret for the private datasets. The notebook records the checked-out commit automatically, installs a separate locked Python 3.12 GPU environment, and invokes the project CLI. Setup clones or fast-forwards a clean main checkout; run setup before evaluation, not during an active run. The notebook displays a tqdm problem counter with elapsed time and ETA for smoke and full evaluation, while retaining detailed console logs. Settings are plain Python assignments, with no Colab forms or commit field to fill in. No project code is embedded in the notebook. A private Git repository requires Git authentication in Colab before cloning; never put credentials in the URL or notebook.
+Use [`evaluate_baseline_english.ipynb`](notebooks/evaluate_baseline_english.ipynb) on the
+RTX PRO 6000 Blackwell 96GB Colab runtime. Enable the `HF_TOKEN` secret. Push local changes
+before running setup: the notebook clones/updates clean `main`, records the Git commit,
+and installs the locked evaluation environment. Stop active evaluation before updating.
 
-All five eval datasets are pinned to the actual upload commits from `english_preparation_reports.zip` in `configs/english_eval_suite.json`. Loading checks all 630 original English rows by content digest, row count and native IDs before generation. AIME 2026 uses `problem_idx`, MATH-500 uses `unique_id`, and AMC23 uses the English `question` column. Training datasets are excluded from evaluation.
+Choose `EVAL_PROFILE` in both the baseline and SFT notebooks:
+
+| Option | Sampling | Responses/checkpoint | Scores |
+| --- | --- | --- | --- |
+| `greedy` (default) | Temperature 0; one answer per problem | 630 | Accuracy/pass@1 |
+| `sample8` | Temperature 1.0, top-p 0.7; eight AIME/AMC answers, four MATH-500 answers | 3,040 | AIME/AMC pass@1/4/8; MATH-500 pass@1/4; avg@n |
+
+Both retain the original English prompts, native chat template, 20,480 output-token limit,
+seed, pinned datasets and rule-based boxed-answer scorer. The five datasets contain
+630 questions: AIME 2024/2025/2026 (30 each), AMC23 (40), MATH-500 (500).
+[`eval_profiles.yaml`](configs/eval_profiles.yaml) defines the differences from the shared
+original config. Continuous batching feeds up to 32 GPU response slots.
+
+The baseline notebook runs a five-problem smoke check by default and downloads its archive.
+After inspecting it, enable `RUN_FULL_EVAL`. Then evaluate SFT using the same profile.
+To compare both profiles, run the base and SFT model once under each option.
 
 ```bash
-# Install uv in the host Python, then create the independent GPU environment.
 python -m pip install uv==0.11.22
 python scripts/setup_eval_runtime.py --venv /content/lg-eval-env
-
-# HF_TOKEN must be available in the environment; do not store it in source files.
-# Optional dataset-only validation (no GPU generation).
-/content/lg-eval-env/bin/python -m eval.run_english_eval \
-  --output_root /content/drive/MyDrive/LG-AIME-English-Eval-compatible --validate-only
-
-# Five problems, one response each, written to output_root/smoke/.
-/content/lg-eval-env/bin/python -m eval.run_english_eval \
-  --output_root /content/drive/MyDrive/LG-AIME-English-Eval-compatible --smoke
-
-# Full baseline: 630 problems / 6,160 responses, written to output_root/full/.
-/content/lg-eval-env/bin/python -m eval.run_english_eval \
+# Use --smoke for a separate five-problem check, or --validate-only for dataset checks.
+/content/lg-eval-env/bin/python -m eval.run_batched_eval \
+  --model LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct \
+  --stage stage0 --run_name baseline_english --profile greedy \
   --output_root /content/drive/MyDrive/LG-AIME-English-Eval-compatible
 ```
 
-The base-model default is pinned in `eval/run_english_eval.py` to revision `e949c91dec92095908d34e6b560af77dd0c993f8`, whose loader supports the locked Transformers 4.57.6 environment. LG's newer `ccce25bd39c141fe053e0bc75818a8f5fe962802` loader imports Transformers-5-only `RopeParameters`. The official Hub file hashes match for both weight shards, weight index, model/generation config, tokenizer files, vocabulary and merges; only loader Python files differ. Explicit `--revision` and saved run revisions are still respected. The launcher uses a fresh `LG-AIME-English-Eval-compatible` output root to preserve metadata from failed attempts with the incompatible loader. Do not reuse incompatible run manifests as new baseline results.
+Results are isolated under `OUTPUT_ROOT/profiles/<profile>/full/results/`, with separate
+`stage0/` and `stage1/` directories. Smoke uses the sibling `smoke/` directory. Each
+completed problem is durably saved in `*_problems.jsonl`; the flat generations export
+and final metrics are written at completion. Repeating the same command with the same
+commit/settings resumes complete problems, regenerating any incomplete problem in full.
+Keep the profile's protocol/runtime manifests alongside its results for SFT comparisons.
 
-`configs/eval_english.yaml` retains temperature 1.0, top-p 0.7, maximum 20,480 completion tokens, n=32 on AIME/AMC and n=4 on MATH-500. `common/english_prompts.py` supplies one English user message with a step-by-step/boxed-answer instruction through the checkpoint's native chat template. No system message is added. The last balanced boxed answer is scored using the existing math-verify scorer. Reports include avg@n, unbiased pass@k for k ≤ n, response lengths and the retained Korean-letter-ratio diagnostic (which never affects correctness).
+The base model remains `LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct`, pinned to loader revision
+`e949c91dec92095908d34e6b560af77dd0c993f8` for Transformers 4.57.6 compatibility.
+The prompts, answer extraction, scorer, dataset suite and dependency lock are unchanged.
 
-Results are saved after every response. Repeating the same command resumes completed problems, preserving the recorded model revision even if upstream main moves. Partially completed problems are regenerated with their original seed and must reproduce saved responses before resuming. Frozen code/config/suite and tokenizer/runtime manifests guard later comparisons. Keep the same Git commit when resuming a run; a changed run identity requires a new run name. Smoke results cannot become full benchmark results. The smoke cell downloads `smoke_test_result.zip`, containing raw prompts/responses, scores, token counts, finish reasons, model/dataset revisions, Git commit and runtime settings. Share that ZIP for review before enabling `RUN_FULL_EVAL`; low accuracy on five questions alone does not mean the pipeline is broken.
-
-If a stage0 startup failed before writing any responses, a code/protocol update archives its metadata under `failed_startups/` and starts again in the same output root. Runs containing responses or completed results remain protected against protocol changes. After pushing a fix yourself, run the notebook setup cells before rerunning smoke. Setup clones `main` on a fresh runtime or automatically fast-forwards an existing clean `main` checkout from GitHub.
-
-The run manifest records the Git commit, exact model and dataset revisions, package versions, hardware, English protocol and selected IDs. The Git checkout must be committed and clean. The old Korean evaluator and its notebook are retained separately. No training code is added by this evaluation update.
+These profiles start fresh and do not import old 32-sample results. Earlier sequential
+and `_batched` artifacts remain untouched; resume an old run with its recorded Git commit.
+The original `eval.run_english_eval` CLI/config remain available for that legacy protocol.
+See the [Stage 1 guide](docs/stage1_sft.md#evaluation) for SFT commands and result paths.
 
 ## Earlier translation notebooks
 

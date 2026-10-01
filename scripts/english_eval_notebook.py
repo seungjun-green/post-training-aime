@@ -18,8 +18,12 @@ def english_eval_cells(markdown, code):
         do not put tokens in the URL or notebook.
 
         The pinned English suite has AIME 2024/2025/2026 (30 each), AMC23 (40), MATH-500 (500).
-        Full evaluation uses **6,160 responses**: 32 per AIME/AMC problem, 4 per MATH problem.
-        Temperature 1.0, top-p 0.7, maximum 20,480 output tokens, native chat template,
+        Choose `EVAL_PROFILE` below; use the same option in the SFT evaluation notebook:
+        - **greedy** (default): temperature 0, one answer per problem, **630 responses**, pass@1.
+        - **sample8**: temperature 1.0/top-p 0.7, eight answers per AIME/AMC problem and
+          four per MATH-500 problem, **3,040 responses**. Reports pass@1/4/8 on AIME/AMC
+          and pass@1/4 on MATH-500, plus average accuracy.
+        Both use continuous batching, maximum 20,480 output tokens, the native chat template,
         an English step-by-step/boxed-answer instruction, and no added system message.
         Scores include avg@n, pass@k and response lengths. The Korean-letter ratio remains a
         diagnostic only; it does not affect correctness.
@@ -30,6 +34,7 @@ def english_eval_cells(markdown, code):
         OUTPUT_ROOT = "/content/drive/MyDrive/LG-AIME-English-Eval-compatible"
         GPU_ENV = "/content/lg-eval-env"
         MODEL = "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct"
+        EVAL_PROFILE = "greedy" # @param ["greedy", "sample8"]
         """),
         code("""
         import os, subprocess, sys
@@ -46,7 +51,7 @@ def english_eval_cells(markdown, code):
         if git("branch", "--show-current") != "main":
             raise ValueError("Expected the main branch; choose a fresh CODE_ROOT")
         subprocess.check_call(["git", "-C", CODE_ROOT, "pull", "--ff-only", "origin", "main"])
-        required = ["common/process.py", "eval/smoke_report.py"]
+        required = ["eval/run_batched_eval.py", "eval/profiles.py", "configs/eval_profiles.yaml"]
         if any(not (Path(CODE_ROOT) / name).is_file() for name in required):
             raise RuntimeError("GitHub is missing the evaluation fixes. Push your local changes, then rerun this cell.")
         print("Evaluation code commit:", git("rev-parse", "HEAD"))
@@ -56,38 +61,42 @@ def english_eval_cells(markdown, code):
         subprocess.check_call([sys.executable, "scripts/setup_eval_runtime.py", "--venv", GPU_ENV], cwd=CODE_ROOT)
         sys.path.insert(0, CODE_ROOT)
         from common.process import run_logged
+        from eval.profiles import profile_root
+        PROFILE_ROOT = profile_root(OUTPUT_ROOT, EVAL_PROFILE)
+        print("Selected profile:", EVAL_PROFILE, "Results:", PROFILE_ROOT)
         import json
         suite = json.loads((Path(CODE_ROOT) / "configs/english_eval_suite.json").read_text())
         FULL_PROGRESS = {name: spec["rows"] for name, spec in suite["datasets"].items()}
-        EVAL_COMMAND = [str(Path(GPU_ENV) / "bin/python"), "-m", "eval.run_english_eval",
+        EVAL_COMMAND = [str(Path(GPU_ENV) / "bin/python"), "-m", "eval.run_batched_eval",
                         "--model", MODEL, "--revision", "e949c91dec92095908d34e6b560af77dd0c993f8",
-                        "--output_root", OUTPUT_ROOT]
+                        "--stage", "stage0", "--run_name", "baseline_english",
+                        "--profile", EVAL_PROFILE, "--output_root", OUTPUT_ROOT]
         """),
         markdown("""
         ## Smoke check — five problems, one response each
         Checks actual GPU loading, English generation and scoring. It is not a benchmark result.
-        Stored under `OUTPUT_ROOT/smoke/`; full baseline results use `OUTPUT_ROOT/full/`.
-        The smoke cell downloads `smoke_test_result.zip`; send it for review before enabling
-        full evaluation. A default Run all performs this smoke check only. Inspect the responses before
+        Stored under `OUTPUT_ROOT/profiles/<profile>/smoke/`; full results use the sibling `full/`.
+        The smoke cell downloads `smoke_test_result.zip` for inspection before full evaluation. A default Run all performs this smoke check only. Inspect the responses before
         enabling the full run. Subprocess output, including errors, is displayed live and saved
-        to `OUTPUT_ROOT/smoke_console.log`. The traceback includes the last error lines on failure.
+        to `PROFILE_ROOT/smoke_console.log`. The traceback includes the last error lines on failure.
         Each CLI process releases its GPU memory when it exits.
         A tqdm bar shows completed problems, elapsed time and estimated time remaining.
         It advances after all answers for a problem have been generated and scored.
         """),
         code("""
         run_logged(EVAL_COMMAND + ["--smoke"], cwd=CODE_ROOT,
-                   log_path=Path(OUTPUT_ROOT) / "smoke_console.log",
+                   log_path=PROFILE_ROOT / "smoke_console.log",
                    progress_totals={name: 1 for name in FULL_PROGRESS})
         from google.colab import files
-        files.download(str(Path(OUTPUT_ROOT) / "smoke/archives/stage0/baseline_english/smoke_test_result.zip"))
+        files.download(str(PROFILE_ROOT / "smoke/archives/stage0/baseline_english/smoke_test_result.zip"))
         """),
         markdown("""
         ## Full English baseline
         Enable this after smoke completes. Full evaluation can take a long time; results and
-        generations are saved on Drive after every response. Rerun with the same commit,
-        configuration and output root to resume completed problems. Partially saved problems
-        are regenerated with their original seed and must match saved responses exactly.
+        completed problems are saved on Drive to `*_problems.jsonl`. Rerun with the same commit,
+        profile and output root to resume. Incomplete problems are regenerated in full; the
+        flat `*_generations.jsonl` export is written at completion. Existing 32-sample results
+        remain separate. These new profiles start fresh; they do not reuse old responses.
         The base-model revision is pinned in the evaluation code to the loader compatible with
         the locked Transformers runtime; the original weights and tokenizer are unchanged.
         The recorded model revision is reused on resume.
@@ -96,22 +105,23 @@ def english_eval_cells(markdown, code):
         RUN_FULL_EVAL = False
         if RUN_FULL_EVAL:
             run_logged(EVAL_COMMAND, cwd=CODE_ROOT,
-                       log_path=Path(OUTPUT_ROOT) / "full_console.log", progress_totals=FULL_PROGRESS)
+                       log_path=PROFILE_ROOT / "full_console.log", progress_totals=FULL_PROGRESS)
         else:
             print("Full evaluation is off. Enable RUN_FULL_EVAL after the smoke check.")
         """),
         code("""
         import json
         mode = "full" if RUN_FULL_EVAL else "smoke"
-        result = Path(OUTPUT_ROOT) / mode / "results/stage0/baseline_english.json"
+        result = PROFILE_ROOT / mode / "results/stage0/baseline_english.json"
         if result.exists():
             print(json.dumps(json.loads(result.read_text())["metrics"], indent=2))
             print("Results and raw generations:", result.parent)
         """),
         markdown("""
         The model remains EXAONE-3.5-2.4B-Instruct. No training or uploads run here.
-        Keep the English evaluation config, prompt, suite and dependency lock fixed for later
-        checkpoint comparisons. Older Korean evaluation results use a different protocol.
+        Run this full baseline for each profile you want to compare against SFT. Choose the same
+        profile in both notebooks. Profiles have separate manifests and cannot mix results.
+        Switching profiles requires rerunning the command-setup cell before smoke or full evaluation.
         Disconnect/delete the GPU runtime when finished to stop rental charges.
         """),
     ]

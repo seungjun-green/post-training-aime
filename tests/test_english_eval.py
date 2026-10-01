@@ -156,12 +156,13 @@ def test_notebook_is_thin_git_launcher_without_embedded_project():
     assert "BUNDLE" not in text and "base64" not in text
     assert '"git", "clone", "--branch", "main"' in text
     assert '"pull", "--ff-only", "origin", "main"' in text
-    assert "GIT_COMMIT" not in text and "@param" not in text
+    assert "GIT_COMMIT" not in text
+    assert 'EVAL_PROFILE = "greedy" # @param ["greedy", "sample8"]' in text
     assert 'git("rev-parse", "HEAD")' in text
-    assert "eval.run_english_eval" in text and "RUN_FULL_EVAL = False" in text
+    assert "eval.run_batched_eval" in text and "RUN_FULL_EVAL = False" in text
     assert '"--revision", "e949c91dec92095908d34e6b560af77dd0c993f8"' in text
-    assert "common/process.py" in text
-    assert len(text.splitlines()) < 70
+    assert "from common.process import run_logged" in text
+    assert len(text.splitlines()) < 80
     for cell in nb.cells:
         if cell.cell_type == "code":
             compile(cell.source, "<notebook>", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)

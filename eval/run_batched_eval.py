@@ -5,6 +5,7 @@ import json
 import os
 import re
 from collections import defaultdict
+from copy import deepcopy
 from pathlib import Path
 from time import monotonic
 
@@ -13,6 +14,7 @@ import yaml
 from common.english_prompts import render_prompt
 from common.io import append_jsonl, digest, read_jsonl, write_json, write_jsonl
 from eval.batched_generation import generate_problems
+from eval.profiles import PROFILE_NAMES, bind_profile_protocol, load_profile, profile_root
 from eval.run_english_eval import (
     ROOT,
     bind_protocol,
@@ -42,7 +44,7 @@ def validate_execution(execution):
 
 def runner_digest():
     return digest({name: (ROOT / name).read_text() for name in [
-        "eval/run_batched_eval.py", "eval/batched_generation.py",
+        "eval/run_batched_eval.py", "eval/batched_generation.py", "eval/profiles.py",
     ]})
 
 
@@ -206,6 +208,10 @@ def main():
     parser.add_argument("--suite", default=str(ROOT / "configs/english_eval_suite.json"))
     parser.add_argument("--execution_config", default=str(ROOT / "configs/eval_execution.yaml"))
     parser.add_argument("--output_root", required=True)
+    parser.add_argument("--profile", choices=PROFILE_NAMES,
+                        help="Named profile; stores runs under output_root/profiles/PROFILE")
+    parser.add_argument("--smoke", action="store_true",
+                        help="With --profile: one problem/answer per benchmark, isolated from full runs")
     parser.add_argument("--validate-only", action="store_true")
     args = parser.parse_args()
     for name in [args.stage, args.run_name, args.reuse_run_name]:
@@ -213,19 +219,39 @@ def main():
             parser.error("stage/run names must use letters, digits, underscores or hyphens")
     if args.run_name == args.reuse_run_name:
         parser.error("Use a separate batched run name; legacy files are never overwritten")
+    if args.profile and args.reuse_run_name:
+        parser.error("New profiles cannot reuse legacy responses with different sampling settings")
+    if args.smoke and not args.profile:
+        parser.error("--smoke requires a named --profile")
     config = yaml.safe_load(Path(args.config).read_text())
     execution = yaml.safe_load(Path(args.execution_config).read_text())
     suite = json.loads(Path(args.suite).read_text())
-    validate_config(config)
+    if args.profile:
+        config, execution = load_profile(args.profile, config, execution)
+    else:
+        validate_config(config)
     validate_execution(execution)
     token = os.getenv("HF_TOKEN")
     datasets = load_eval_sets(config, suite, token)
+    if args.smoke:
+        config = deepcopy(config)
+        config["pass_k"] = [1]
+        datasets = {name: rows[:1] for name, rows in datasets.items()}
+        for spec in config["datasets"].values():
+            spec["n"] = 1
     selected = {name: [r["id"] for r in rows] for name, rows in datasets.items()}
-    root = Path(args.output_root) / "full"
-    # Keep original scientific identity intact and separately record the new runner.
-    protocol_id = bind_protocol(root, config, suite, "stage1", selected, False)
+    parent = profile_root(args.output_root, args.profile) if args.profile else Path(args.output_root)
+    root = parent / ("smoke" if args.smoke else "full")
+    if args.profile:
+        protocol_id = bind_profile_protocol(
+            root, args.profile, config, execution, suite, args.stage, selected, args.smoke,
+            runner_digest(), create=not args.validate_only,
+        )
+    else:
+        # Legacy path retains the original scientific protocol and separate runner identity.
+        protocol_id = bind_protocol(root, config, suite, "stage1", selected, False)
     if args.validate_only:
-        print("Validated all five datasets, baseline protocol, and execution settings", flush=True)
+        print("Validated datasets, evaluation protocol, and execution settings", flush=True)
         return
     from eval.engines import check_hardware
     from eval.english_engines import create_engine
@@ -239,12 +265,15 @@ def main():
     )
     metadata = {
         "model": args.model, "model_revision": revision, "model_digest": model_digest,
-        "git_commit": commit, "stage": args.stage, "run_name": args.run_name, "mode": "full",
+        "git_commit": commit, "stage": args.stage, "run_name": args.run_name,
+        "mode": "smoke" if args.smoke else "full",
         "config": config, "protocol_digest": protocol_id, "dataset_suite": suite,
         "selected_ids": selected, "packages": package_versions(), "hardware": check_hardware(config),
         "execution": execution, "runner_digest": runner_digest(),
         "reuse_run_name": args.reuse_run_name,
     }
+    if args.profile:
+        metadata["profile"] = args.profile
     imported, source = legacy_source(result_dir, args.reuse_run_name, metadata, datasets, config)
     metadata["legacy_source"] = source
     journal = result_dir / f"{args.run_name}_problems.jsonl"
@@ -263,7 +292,7 @@ def main():
     engine, fallback = create_engine(args.model, config, revision)
     if engine.name != "vllm":
         raise ValueError(f"Continuous evaluation needs vLLM; unsupported model: {fallback}")
-    bind_runtime(root, engine.tokenizer, "stage1")
+    bind_runtime(root, engine.tokenizer, args.stage if args.profile else "stage1")
     engine_info = {
         "engine": engine.name, "fallback_reason": fallback,
         "chat_template_digest": digest(engine.tokenizer.chat_template),
@@ -280,6 +309,10 @@ def main():
     write_json(destination, {**metadata, **engine_info, "metrics": results})
     print(json.dumps(results, indent=2), flush=True)
     print("Saved:", destination, flush=True)
+    if args.smoke:
+        from eval.smoke_report import write_smoke_archive
+
+        print("Smoke archive:", write_smoke_archive(root, args.stage, args.run_name), flush=True)
 
 
 if __name__ == "__main__":
