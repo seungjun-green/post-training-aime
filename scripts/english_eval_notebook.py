@@ -119,7 +119,7 @@ def english_eval_cells(markdown, code):
         """),
         markdown("""
         The model remains EXAONE-3.5-2.4B-Instruct. No training or uploads run here.
-        Run this full baseline for each profile you want to compare against SFT. Choose the same
+        Run this full baseline before or after SFT for each profile you want to compare. Choose the same
         profile in both notebooks. Profiles have separate manifests and cannot mix results.
         Switching profiles requires rerunning the command-setup cell before smoke or full evaluation.
         Disconnect/delete the GPU runtime when finished to stop rental charges.

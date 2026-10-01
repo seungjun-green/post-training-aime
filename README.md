@@ -46,7 +46,7 @@ seed, pinned datasets and rule-based boxed-answer scorer. The five datasets cont
 original config. Continuous batching feeds up to 32 GPU response slots.
 
 The baseline notebook runs a five-problem smoke check by default and downloads its archive.
-After inspecting it, enable `RUN_FULL_EVAL`. Then evaluate SFT using the same profile.
+After inspecting it, enable `RUN_FULL_EVAL`. Evaluate SFT using the same profile; either model can run first.
 To compare both profiles, run the base and SFT model once under each option.
 
 ```bash

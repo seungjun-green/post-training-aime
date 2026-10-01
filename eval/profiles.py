@@ -9,6 +9,7 @@ import yaml
 
 from common.io import digest, write_json
 from eval.run_english_eval import ROOT, code_fingerprint
+from eval.run_eval import bind_runtime
 
 PROFILE_NAMES = ("greedy", "sample8")
 
@@ -67,8 +68,15 @@ def bind_profile_protocol(root, name, config, execution, suite, stage, selected,
     if path.exists():
         if json.loads(path.read_text()) != protocol:
             raise ValueError("Evaluation profile protocol changed; use a separate output root")
-    elif stage != "stage0":
-        raise ValueError(f"Run the {name} baseline first with the same profile")
     elif create:
         write_json(path, protocol)
     return digest(protocol)
+
+
+def bind_profile_runtime(root, tokenizer):
+    """Either model can establish the runtime; existing settings must still match.
+
+    The legacy binder's stage0 mode permits creation and also validates existing
+    manifests. This does not change the actual stage recorded in run metadata.
+    """
+    bind_runtime(root, tokenizer, "stage0")

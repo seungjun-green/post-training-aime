@@ -126,11 +126,11 @@ def eval_cells():
         from common.process import run_logged
         """),
         markdown("""
-        ## Check saved checkpoints and baseline manifests
-        Keep `TRAIN_ROOT` the same as in the training notebook. First run the updated baseline
-        notebook with the selected profile. Its full result and manifests must exist under
-        `BASELINE_ROOT/profiles/<profile>/full/results/`. The runner enforces matching sampling,
-        prompts, datasets, scoring and runtime for baseline/SFT comparisons within each profile.
+        ## Check saved checkpoints
+        Keep `TRAIN_ROOT` the same as in the training notebook. SFT evaluation can run before
+        the baseline. The first run creates the selected profile's protocol/runtime manifests
+        under `BASELINE_ROOT/profiles/<profile>/full/results/`. Later runs validate the same
+        sampling, prompts, datasets, scoring and runtime for comparisons within that profile.
         To switch from an older notebook, stop evaluation, push the updated code, and run setup.
         New profiles start fresh and leave previous 32-sample results intact; old responses are
         not imported. Once a run starts, keep its code commit and settings unchanged for resume.
@@ -146,9 +146,6 @@ def eval_cells():
             selected_epochs.extend(range(1, epochs))
         checkpoint_root = Path(TRAIN_ROOT) / "checkpoints" / cfg["stage"] / cfg["run_name"]
         result_root = profile_root(BASELINE_ROOT, EVAL_PROFILE) / "full/results"
-        for filename in ["eval_protocol.json", "eval_runtime.json", "stage0/baseline_english.json"]:
-            if not (result_root / filename).is_file():
-                raise FileNotFoundError(f"Run the matching full baseline first; missing: {result_root / filename}")
         run_identities = set()
         eval_runs = []
         for epoch in selected_epochs:

@@ -14,7 +14,13 @@ import yaml
 from common.english_prompts import render_prompt
 from common.io import append_jsonl, digest, read_jsonl, write_json, write_jsonl
 from eval.batched_generation import generate_problems
-from eval.profiles import PROFILE_NAMES, bind_profile_protocol, load_profile, profile_root
+from eval.profiles import (
+    PROFILE_NAMES,
+    bind_profile_protocol,
+    bind_profile_runtime,
+    load_profile,
+    profile_root,
+)
 from eval.run_english_eval import (
     ROOT,
     bind_protocol,
@@ -292,7 +298,10 @@ def main():
     engine, fallback = create_engine(args.model, config, revision)
     if engine.name != "vllm":
         raise ValueError(f"Continuous evaluation needs vLLM; unsupported model: {fallback}")
-    bind_runtime(root, engine.tokenizer, args.stage if args.profile else "stage1")
+    if args.profile:
+        bind_profile_runtime(root, engine.tokenizer)
+    else:
+        bind_runtime(root, engine.tokenizer, "stage1")
     engine_info = {
         "engine": engine.name, "fallback_reason": fallback,
         "chat_template_digest": digest(engine.tokenizer.chat_template),

@@ -9,7 +9,13 @@ from test_batched_eval import fixture, install_core
 
 from common.io import read_jsonl
 from eval import run_batched_eval as runner
-from eval.profiles import load_profile, profile_root, validate_profile_config
+from eval.profiles import (
+    bind_profile_protocol,
+    bind_profile_runtime,
+    load_profile,
+    profile_root,
+    validate_profile_config,
+)
 
 
 @pytest.mark.parametrize("profile,total,temperature,math_n,queue", [
@@ -62,7 +68,8 @@ def test_invalid_profiles_rejected(temperature, n, ks):
 
 
 @pytest.mark.parametrize("profile", ["greedy", "sample8"])
-def test_base_then_sft_smoke_full_resume_and_profile_isolation(tmp_path, monkeypatch, profile):
+@pytest.mark.parametrize("first_stage", ["stage0", "stage1"])
+def test_either_stage_first_smoke_full_resume_and_profile_isolation(tmp_path, monkeypatch, profile, first_stage):
     from eval import engines, english_engines
 
     engine, _, _, _ = fixture()
@@ -95,21 +102,19 @@ def test_base_then_sft_smoke_full_resume_and_profile_isolation(tmp_path, monkeyp
         runner.main()
 
     root = profile_root(tmp_path, profile)
-    run("stage0", validate=True)
-    assert not root.exists()  # validation is read-only
-    with pytest.raises(ValueError, match="baseline first"):
-        run("stage1")
+    run(first_stage, validate=True)
+    assert not root.exists()  # validation is read-only for either stage
     run("stage0", smoke=True)
     smoke = json.loads((root / "smoke/results/stage0/baseline_english.json").read_text())
     assert smoke["mode"] == "smoke"
     assert all(m["responses"] == 1 for m in smoke["metrics"].values())
     assert (root / "smoke/archives/stage0/baseline_english/smoke_test_result.zip").exists()
     assert not (root / "full").exists()
-    with pytest.raises(ValueError, match="baseline first"):
-        run("stage1")  # smoke baseline cannot substitute for full
-    run("stage0")
+    run(first_stage)
+    manifests = {p: p.read_bytes() for p in (root / "full/results").glob("*.json")}
+    run("stage1" if first_stage == "stage0" else "stage0")
+    assert all(path.read_bytes() == content for path, content in manifests.items())
     baseline = json.loads((root / "full/results/stage0/baseline_english.json").read_text())
-    run("stage1")
     result_path = root / "full/results/stage1/sft_s1k.json"
     sft = json.loads(result_path.read_text())
     assert sft["config"] == baseline["config"]
@@ -127,8 +132,9 @@ def test_base_then_sft_smoke_full_resume_and_profile_isolation(tmp_path, monkeyp
     run("stage1")
     assert len(core.calls) == calls
     other = "greedy" if profile == "sample8" else "sample8"
-    with pytest.raises(ValueError, match="baseline first"):
-        run("stage1", selected_profile=other)
+    run("stage1", selected_profile=other)
+    assert (profile_root(tmp_path, other) / "full/results/stage1/sft_s1k.json").is_file()
+    assert not (profile_root(tmp_path, other) / "full/results/stage0").exists()
     assert old.read_text() == '{"original": "untouched"}'
 
 
@@ -141,6 +147,28 @@ def test_profiles_reject_legacy_import_and_unknown_names(monkeypatch, tmp_path):
         runner.main()
     with pytest.raises(ValueError, match="Unknown"):
         profile_root(tmp_path, "../old")
+
+
+def test_sft_first_still_rejects_later_protocol_and_runtime_changes(tmp_path):
+    engine, _, config, execution = fixture()
+    first = bind_profile_protocol(
+        tmp_path, "sample8", config, execution, {}, "stage1", {"test": [0]}, False, "code",
+    )
+    assert bind_profile_protocol(
+        tmp_path, "sample8", config, execution, {}, "stage0", {"test": [0]}, False, "code",
+    ) == first
+    bind_profile_runtime(tmp_path, engine.tokenizer)
+    saved = {p: p.read_bytes() for p in (tmp_path / "results").glob("*.json")}
+    changed = deepcopy(config)
+    changed["temperature"] = 0.5
+    with pytest.raises(ValueError, match="protocol changed"):
+        bind_profile_protocol(
+            tmp_path, "sample8", changed, execution, {}, "stage0", {"test": [0]}, False, "code",
+        )
+    engine.tokenizer.chat_template = "different"
+    with pytest.raises(ValueError, match="Tokenizer"):
+        bind_profile_runtime(tmp_path, engine.tokenizer)
+    assert all(path.read_bytes() == content for path, content in saved.items())
 
 
 @pytest.mark.parametrize("profile", ["greedy", "sample8"])

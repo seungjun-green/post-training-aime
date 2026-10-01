@@ -242,11 +242,7 @@ def test_evaluation_notebook_prioritizes_final_epoch_and_makes_others_optional(t
         (folder / "stage1_checkpoint.json").write_text(json.dumps({
             "epoch": epoch, "run_identity": "same-run",
         }))
-    results = baseline_root / "profiles" / profile / "full/results"
-    results.mkdir(parents=True)
-    for name in ["eval_protocol.json", "eval_runtime.json", "stage0/baseline_english.json"]:
-        (results / name).parent.mkdir(parents=True, exist_ok=True)
-        (results / name).write_text("{}")
+    assert not baseline_root.exists()  # SFT preflight needs no baseline artifacts.
     calls = []
     context = {
         "Path": Path, "json": json, "CODE_ROOT": str(ROOT),

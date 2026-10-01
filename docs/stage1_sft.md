@@ -36,16 +36,17 @@ settings live in [`eval_profiles.yaml`](../configs/eval_profiles.yaml), as overr
 of the original English config. Training settings remain in `stage1_sft.yaml`.
 
 To switch an active Colab session, stop evaluation, push the updated code, and run the
-updated baseline notebook from setup. Its default Run all performs a five-problem smoke
-check; enable `RUN_FULL_EVAL` for the selected full baseline. Then run the SFT evaluation
-notebook with the same profile. It defaults to setup/checks only; enable `RUN_STAGE1_EVAL`.
+updated notebook from setup. Either model can be evaluated first. The baseline notebook
+has a separate smoke check: its default Run all performs a five-problem smoke
+check; enable `RUN_FULL_EVAL` for the selected full baseline. The SFT evaluation
+notebook uses the same profile; it can run before or after the baseline. It defaults to setup/checks only; enable `RUN_STAGE1_EVAL`.
 To run both options, complete the baseline and SFT workflow once for each profile.
 
 New profiles start fresh, including the base model. They do not reuse results generated
 under the old 32-sample protocol. Old sequential and `_batched` files remain intact.
 The root contains separate `profiles/greedy/` and `profiles/sample8/` directories, each
-with isolated smoke/full protocols and runtime manifests. The SFT preflight requires the
-selected profile's completed baseline result and parent manifests. Within a run, keep the
+with isolated smoke/full protocols and runtime manifests. Whichever model runs first
+creates these manifests; later runs validate them. SFT requires no baseline files. Within a run, keep the
 same code commit, profile and settings to resume completed problems. Switching profiles
 requires rerunning the notebook's setup/check cells before evaluation.
 
