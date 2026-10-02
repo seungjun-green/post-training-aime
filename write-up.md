@@ -73,7 +73,18 @@ training sequences longer than 20,480 tokens, 718 examples remain (272 overlengt
 This gives 45 optimizer steps per epoch and 225 across five epochs. New checkpoints/logs use
 `sft_s1k_deepseek_pro`; the old config and outputs remain separate. The dataset's current HF
 revision is resolved to an immutable commit and its exact content is checked and recorded.
-Evaluation code is unchanged; select the new config in an evaluation notebook to target this run.
+`evaluate_stage1_sft_temp1.ipynb` selects this run's epoch-5 checkpoint: temperature 1.0,
+top-p 0.7, one answer per problem on all five benchmarks. The `sample1_budget` profile
+adds s1-style early-exit budget forcing with an editable thinking cap (default 18,432, minimum
+zero) and the remaining 2,048 tokens including any injected `</think>` and final-answer cue.
+The notebook saves a resolved budget YAML on Drive, and each budget split has its own output
+directory; the earlier fixed 16,384/4,096 profile is still available. Total continuation tokens
+stay within 20,480. Natural thinking termination is allowed; "Wait" extension is disabled.
+Two-phase requests use the existing continuous vLLM scheduler interface and scoring code.
+Results are isolated by profile, with phase counts and forced-transition flags in raw records.
+An optional five-problem smoke cell precedes the full-run cell. The old R1 checkpoint can be
+tested by selecting its original SFT config. No accuracy gain has been measured yet; local
+mock tests validate the mechanism, and the Colab GPU smoke test remains to be run.
 
 The active notebooks are:
 

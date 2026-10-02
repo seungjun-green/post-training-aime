@@ -71,7 +71,7 @@ def test_invalid_profiles_rejected(temperature, n, ks):
         validate_profile_config(config)
 
 
-@pytest.mark.parametrize("profile", ["greedy", "sample8", "sample1"])
+@pytest.mark.parametrize("profile", ["greedy", "sample8", "sample1", "sample1_budget16k", "sample1_budget"])
 @pytest.mark.parametrize("first_stage", ["stage0", "stage1"])
 def test_either_stage_first_smoke_full_resume_and_profile_isolation(tmp_path, monkeypatch, profile, first_stage):
     from eval import engines, english_engines
@@ -208,21 +208,23 @@ def test_baseline_notebook_passes_profile_and_keeps_default_full_run_off(tmp_pat
     assert len(calls) == 1 and calls[0][0][0] == command
 
 
-def test_temperature_one_sft_notebook_is_fresh_and_defaults_to_sample1(monkeypatch):
+def test_temperature_one_sft_notebook_is_fresh_and_defaults_to_budget_forcing(monkeypatch):
     import nbformat
 
     monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
-    from build_stage1_notebook import sample1_eval_cells
+    from build_stage1_notebook import budget_eval_cells
 
     nb = nbformat.read("notebooks/evaluate_stage1_sft_temp1.ipynb", as_version=4)
     nbformat.validate(nb)
-    assert [c.source for c in nb.cells] == [c.source for c in sample1_eval_cells()]
+    assert [c.source for c in nb.cells] == [c.source for c in budget_eval_cells()]
     context = {}
     for cell in nb.cells:
         if cell.cell_type == "code":
             compile(cell.source, "temperature_one_sft", "exec")
             assert cell.execution_count is None and cell.outputs == []
-            if 'EVAL_PROFILE = "sample1"' in cell.source:
+            if 'EVAL_PROFILE = "sample1_budget"' in cell.source:
                 exec(cell.source, context)
-    assert context["EVAL_PROFILE"] == "sample1"
+    assert context["EVAL_PROFILE"] == "sample1_budget"
+    assert context["MAX_THINKING_TOKENS"] == 18432
+    assert context["CONFIG"] == "configs/stage1_sft_deepseek_pro.yaml"
     assert "defines both options" not in "\n".join(c.source for c in nb.cells)

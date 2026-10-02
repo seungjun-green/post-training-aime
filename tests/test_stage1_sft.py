@@ -283,15 +283,18 @@ def test_stage1_notebooks_are_separate_thin_and_fresh(monkeypatch, kind):
             assert cell.execution_count is None and not cell.outputs
 
 
-@pytest.mark.parametrize("profile", ["greedy", "sample8", "sample1"])
+@pytest.mark.parametrize("profile", ["greedy", "sample8", "sample1", "sample1_budget16k", "sample1_budget"])
 def test_evaluation_notebook_prioritizes_final_epoch_and_makes_others_optional(tmp_path, monkeypatch, profile):
     pytest.importorskip("nbformat")
     monkeypatch.syspath_prepend(str(ROOT / "scripts"))
-    from build_stage1_notebook import eval_cells, sample1_eval_cells
+    from build_stage1_notebook import eval_cells, sample1_eval_cells, budget_eval_cells
 
     train_root, baseline_root = tmp_path / "training", tmp_path / "baseline"
+    pro = profile in {"sample1", "sample1_budget16k", "sample1_budget"}
+    run_name = "sft_s1k_deepseek_pro" if pro else "sft_s1k"
+    config_path = "configs/stage1_sft_deepseek_pro.yaml" if pro else "configs/stage1_sft.yaml"
     for epoch in range(1, 6):
-        folder = train_root / "checkpoints/stage1/sft_s1k" / f"epoch_{epoch}"
+        folder = train_root / "checkpoints/stage1" / run_name / f"epoch_{epoch}"
         folder.mkdir(parents=True)
         (folder / "stage1_checkpoint.json").write_text(json.dumps({
             "epoch": epoch, "run_identity": "same-run",
@@ -301,10 +304,11 @@ def test_evaluation_notebook_prioritizes_final_epoch_and_makes_others_optional(t
     context = {
         "Path": Path, "json": json, "CODE_ROOT": str(ROOT),
         "TRAIN_ROOT": str(train_root), "BASELINE_ROOT": str(baseline_root),
-        "EVAL_ENV": "/test/eval-env", "CONFIG": "configs/stage1_sft.yaml", "EVAL_PROFILE": profile,
+        "EVAL_ENV": "/test/eval-env", "CONFIG": config_path, "EVAL_PROFILE": profile,
+        "MAX_THINKING_TOKENS": 18432,
         "run_logged": lambda command, **kwargs: calls.append((command, kwargs)),
     }
-    factory = sample1_eval_cells if profile == "sample1" else eval_cells
+    factory = budget_eval_cells if profile.startswith("sample1_budget") else sample1_eval_cells if pro else eval_cells
     sources = [c.source for c in factory() if c.cell_type == "code"]
     preflight = next(source for source in sources if "run_identities = set()" in source)
     run = next(source for source in sources if "RUN_STAGE1_EVAL = False" in source)
@@ -313,7 +317,7 @@ def test_evaluation_notebook_prioritizes_final_epoch_and_makes_others_optional(t
     assert calls == []  # default notebook execution performs no evaluation
     exec(run.replace("RUN_STAGE1_EVAL = False", "RUN_STAGE1_EVAL = True"), context)
     assert len(calls) == 1
-    assert calls[0][0][calls[0][0].index("--run_name") + 1] == "sft_s1k"
+    assert calls[0][0][calls[0][0].index("--run_name") + 1] == run_name
     calls.clear()
     include_earlier = preflight.replace("INCLUDE_EARLIER_EPOCHS = False", "INCLUDE_EARLIER_EPOCHS = True")
     exec(include_earlier, context)
@@ -322,7 +326,7 @@ def test_evaluation_notebook_prioritizes_final_epoch_and_makes_others_optional(t
     for epoch, (command, kwargs) in zip([5, 1, 2, 3, 4], calls, strict=True):
         assert command[1:3] == ["-m", "eval.run_batched_eval"]
         assert Path(command[command.index("--model") + 1]).name == f"epoch_{epoch}"
-        expected_name = "sft_s1k" if epoch == 5 else f"sft_s1k_epoch{epoch}"
+        expected_name = run_name if epoch == 5 else f"{run_name}_epoch{epoch}"
         assert command[command.index("--run_name") + 1] == expected_name
         assert "--reuse_run_name" not in command
         assert command[command.index("--profile") + 1] == profile
@@ -331,8 +335,16 @@ def test_evaluation_notebook_prioritizes_final_epoch_and_makes_others_optional(t
         assert kwargs["progress_totals"] == {
             "aime_2024": 30, "aime_2025": 30, "aime_2026": 30, "amc23": 40, "math_500": 500,
         }
-        assert kwargs["log_path"] == train_root / f"full_eval_epoch{epoch}_{profile}_console.log"
-    (train_root / "checkpoints/stage1/sft_s1k/epoch_3/stage1_checkpoint.json").unlink()
+        label = profile + "_thinking_18432_answer_2048" if profile == "sample1_budget" else profile
+        log_name = (f"{expected_name}_epoch{epoch}_{label}_console.log" if pro
+                    else f"full_eval_epoch{epoch}_{profile}_console.log")
+        assert kwargs["log_path"] == train_root / log_name
+        assert Path(command[command.index("--model") + 1]).parent.name == run_name
+        if profile == "sample1_budget":
+            import yaml
+            budget_path = Path(command[command.index("--budget_config") + 1])
+            assert yaml.safe_load(budget_path.read_text())["max_reasoning_tokens"] == 18432
+    (train_root / "checkpoints/stage1" / run_name / "epoch_3/stage1_checkpoint.json").unlink()
     calls.clear()
     # Missing an optional checkpoint must not block the default epoch-5 evaluation.
     exec(preflight, context)

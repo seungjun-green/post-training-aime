@@ -220,7 +220,9 @@ def sample1_eval_cells():
     """Reuse the checkpoint/evaluation workflow with single-sample stochastic decoding."""
     notebook_cells = eval_cells()
     notebook_cells[0] = markdown("""
-        # Stage 1 — Temperature 1.0, one answer per problem
+        # Stage 1 — DeepSeek Pro SFT epoch 5 evaluation
+        Uses `configs/stage1_sft_deepseek_pro.yaml` and loads the checkpoint from
+        `TRAIN_ROOT/checkpoints/stage1/sft_s1k_deepseek_pro/epoch_5/`.
         Evaluate **epoch 5** on **AIME 2024, AIME 2025, AIME 2026, AMC 2023, and MATH-500**.
         The `sample1` profile generates exactly **one answer per problem** at **temperature 1.0**
         and **top-p 0.7**: **630 responses per checkpoint**, reporting accuracy/pass@1.
@@ -233,7 +235,8 @@ def sample1_eval_cells():
         Push the new notebook, profile config, and profile-loader changes to the configured
         GitHub repository before running setup. Setup clones/updates that repository.
 
-        Results are saved under `profiles/sample1/`, separately from greedy and sample8 results.
+        Results are saved as `profiles/sample1/full/results/stage1/sft_s1k_deepseek_pro.json`,
+        separately from the earlier SFT run. Console logs also use the new run name.
         A baseline run is **not required** to start. The same `sample1` profile is also available
         to the baseline CLI when you want a matched comparison. Default Run all performs setup
         and checkpoint checks; enable `RUN_STAGE1_EVAL` in the final cell to generate answers.
@@ -241,10 +244,23 @@ def sample1_eval_cells():
     for cell in notebook_cells:
         if cell.cell_type == "code":
             cell.source = cell.source.replace(
+                'CONFIG = "configs/stage1_sft.yaml"',
+                'CONFIG = "configs/stage1_sft_deepseek_pro.yaml"',
+            ).replace(
+                'f"full_eval_epoch{epoch}_{EVAL_PROFILE}_console.log"',
+                'f"{run_name}_epoch{epoch}_{EVAL_PROFILE}_console.log"',
+            ).replace(
+                'print("Evaluation code commit:", git("rev-parse", "HEAD"))',
+                'print("Evaluation code commit:", git("rev-parse", "HEAD"))\n'
+                'if not (Path(CODE_ROOT) / CONFIG).is_file():\n'
+                '    raise FileNotFoundError(f"Missing {CONFIG}. Push the Pro SFT updates to GitHub main, then rerun setup.")',
+            )
+            cell.source = cell.source.replace(
                 'EVAL_PROFILE = "greedy" # @param ["greedy", "sample8"]',
                 'EVAL_PROFILE = "sample1"  # temperature 1.0; one answer on every benchmark',
             )
         elif cell.source.startswith("## Full evaluation"):
+            cell.source = cell.source.replace("sft_s1k", "sft_s1k_deepseek_pro")
             cell.source = cell.source.replace(
                 "`configs/eval_profiles.yaml` defines both options and queues up to 64 greedy\n"
                 "or 16 sampled problems to feed the existing 32 GPU response slots.",
@@ -254,7 +270,119 @@ def sample1_eval_cells():
     return notebook_cells
 
 
+def budget_eval_cells():
+    notebook_cells = sample1_eval_cells()
+    notebook_cells[0] = markdown("""
+        # Stage 1 — Epoch 5 evaluation with budget forcing
+        Default checkpoint: `TRAIN_ROOT/checkpoints/stage1/sft_s1k_deepseek_pro/epoch_5/`.
+        Evaluate **AIME 2024, AIME 2025, AIME 2026, AMC 2023, and MATH-500** with
+        **temperature 1.0, top-p 0.7, one answer per problem** (630 responses).
+
+        Set **MAX_THINKING_TOKENS** in the settings cell. Its default is **18,432**;
+        the answer allowance is automatically **20,480 − MAX_THINKING_TOKENS** (default **2,048**).
+        Minimum reasoning stays zero. At the cap, append `</think>`
+        and `Final Answer:` and continue the same assistant response. A natural `</think>`
+        starts the answer phase earlier; natural EOS is respected. No "Wait" extension is used.
+        The answer allowance includes injected delimiter/cue tokens, keeping the full continuation
+        within **20,480 tokens**. The first-phase count includes the generated opening think marker.
+
+        Each budget gets a separate folder, by default
+        `profiles/sample1_budget/thinking_18432_answer_2048/`. Changing the cap starts a separate
+        evaluation; rerun the checkpoint-check cell after editing settings. The resolved budget
+        YAML is saved to Drive under `TRAIN_ROOT/eval_configs/` and used by both smoke and full runs.
+        Raw records include whether the transition was forced and each phase's token counts.
+        Training, prompts, benchmarks, and answer scoring are unchanged. No baseline is required.
+
+        Use the **RTX PRO 6000 Blackwell 96GB**, enable `HF_TOKEN`, and push the updated Python
+        files/configs to GitHub main before setup. Run the optional five-problem smoke cell first,
+        then enable the separate full evaluation cell. Default Run all performs setup/checks only.
+        Epoch 5 is selected by default; earlier epochs remain optional.
+
+        To test the **previous R1 SFT checkpoint** with the same budget forcing, change CONFIG
+        below to `configs/stage1_sft.yaml`; this selects `sft_s1k/epoch_5` and a separate result name.
+        To run without budget forcing, select `sample1` and use a fresh BASELINE_ROOT if that
+        profile already has manifests from an older evaluator version. Existing runs require
+        their original code/settings to resume; old generations are never imported here.
+        """)
+    for cell in notebook_cells:
+        if cell.cell_type == "code":
+            cell.source = cell.source.replace(
+                'EVAL_PROFILE = "sample1"  # temperature 1.0; one answer on every benchmark',
+                'EVAL_PROFILE = "sample1_budget" # @param ["sample1_budget", "sample1"]\n'
+                'MAX_THINKING_TOKENS = 18432 # @param {type:"integer"}',
+            )
+            cell.source = cell.source.replace(
+                'if not (Path(CODE_ROOT) / CONFIG).is_file():',
+                'if (not (Path(CODE_ROOT) / CONFIG).is_file()\n'
+                '        or not (Path(CODE_ROOT) / "eval/budget_generation.py").is_file()):',
+            ).replace(
+                'f"Missing {CONFIG}. Push the Pro SFT updates to GitHub main, then rerun setup."',
+                'f"Missing {CONFIG} or budget-forcing code. Push all evaluation updates to GitHub main, then rerun setup."',
+            )
+            if "progress_totals =" in cell.source:
+                cell.source = cell.source.replace(
+                    "from eval.profiles import profile_root",
+                    "from eval.profiles import profile_root, load_profile\n"
+                    "eval_config = yaml.safe_load((Path(CODE_ROOT) / 'configs/eval_english.yaml').read_text())\n"
+                    "execution = yaml.safe_load((Path(CODE_ROOT) / 'configs/eval_execution.yaml').read_text())\n"
+                    "budget = None\n"
+                    "BUDGET_ARGS = []\n"
+                    "EVAL_LABEL = EVAL_PROFILE\n"
+                    "if EVAL_PROFILE == 'sample1_budget':\n"
+                    "    if type(MAX_THINKING_TOKENS) is not int or not 0 < MAX_THINKING_TOKENS < eval_config['max_new_tokens']:\n"
+                    "        raise ValueError('MAX_THINKING_TOKENS must be a positive integer below the total token budget')\n"
+                    "    budget = yaml.safe_load((Path(CODE_ROOT) / 'configs/eval_profiles.yaml').read_text())[EVAL_PROFILE]['budget_forcing']\n"
+                    "    budget['max_reasoning_tokens'] = MAX_THINKING_TOKENS\n"
+                    "    budget['answer_budget_tokens'] = eval_config['max_new_tokens'] - MAX_THINKING_TOKENS\n"
+                    "    load_profile(EVAL_PROFILE, eval_config, execution, budget_override=budget)\n"
+                    "    EVAL_LABEL += f\"_thinking_{MAX_THINKING_TOKENS}_answer_{budget['answer_budget_tokens']}\"\n"
+                    "    budget_path = Path(TRAIN_ROOT) / 'eval_configs' / (EVAL_LABEL + '.yaml')\n"
+                    "    budget_path.parent.mkdir(parents=True, exist_ok=True)\n"
+                    "    budget_path.write_text(yaml.safe_dump(budget, sort_keys=False))\n"
+                    "    BUDGET_ARGS = ['--budget_config', str(budget_path)]\n"
+                    "    print('Budget config saved:', budget_path)",
+                ).replace(
+                    "profile_root(BASELINE_ROOT, EVAL_PROFILE)",
+                    "profile_root(BASELINE_ROOT, EVAL_PROFILE, budget)",
+                )
+                cell.source += '\nprint("Evaluation profile:", EVAL_PROFILE)\nprint("Budget settings:", budget or "off")'
+            if "RUN_STAGE1_EVAL = False" in cell.source:
+                cell.source = cell.source.replace(
+                    "        run_logged(command,", "        command.extend(BUDGET_ARGS)\n        run_logged(command,"
+                ).replace("_{EVAL_PROFILE}_console.log", "_{EVAL_LABEL}_console.log")
+        elif cell.source.startswith("## Full evaluation"):
+            cell.source = cell.source.replace(
+                "`configs/eval_profiles.yaml` defines `sample1`: temperature 1.0, top-p 0.7,",
+                "`configs/eval_profiles.yaml` defines the selected profile: temperature 1.0, top-p 0.7,",
+            )
+    smoke = [markdown("""
+        ## Optional smoke test — five problems, epoch 5
+        Enable this to test one problem from each benchmark before the full run. It uses the same
+        checkpoint, sampling, and budget settings. Smoke results and raw generations are isolated
+        under `profiles/<profile>/smoke/`; they are not counted as full evaluation results.
+        Check `budget_forcing` in the generations JSONL for phase lengths and `forced` transitions.
+        A short smoke response may finish naturally without exercising the reasoning cap.
+        """), code("""
+        RUN_SMOKE_EVAL = False
+        if RUN_SMOKE_EVAL:
+            epoch, checkpoint, run_name = eval_runs[0]
+            command = [str(Path(EVAL_ENV) / "bin/python"), "-m", "eval.run_batched_eval",
+                       "--model", str(checkpoint), "--stage", cfg["stage"], "--run_name", run_name,
+                       "--output_root", BASELINE_ROOT, "--profile", EVAL_PROFILE,
+                       "--execution_config", "configs/eval_execution.yaml", "--smoke"]
+            command.extend(BUDGET_ARGS)
+            run_logged(command, cwd=CODE_ROOT,
+                       log_path=Path(TRAIN_ROOT) / f"{run_name}_{EVAL_LABEL}_smoke_console.log",
+                       progress_totals={name: 1 for name in progress_totals})
+        else:
+            print("Smoke evaluation is off. Enable RUN_SMOKE_EVAL to test five problems.")
+        """)]
+    index = next(i for i, cell in enumerate(notebook_cells) if cell.source.startswith("## Full evaluation"))
+    notebook_cells[index:index] = smoke
+    return notebook_cells
+
+
 if __name__ == "__main__":
     write_notebook("train_stage1_sft.ipynb", cells())
     write_notebook("evaluate_stage1_sft.ipynb", eval_cells())
-    write_notebook("evaluate_stage1_sft_temp1.ipynb", sample1_eval_cells())
+    write_notebook("evaluate_stage1_sft_temp1.ipynb", budget_eval_cells())

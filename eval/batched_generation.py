@@ -13,6 +13,11 @@ def generate_problems(engine, jobs, execution):
     seed derivation. FINAL_ONLY avoids transferring partial text on every token.
     More pending problems do not increase the configured GPU max_num_seqs.
     """
+    if "budget_forcing" in engine.config:
+        from eval.budget_generation import generate_budget_problems
+
+        yield from generate_budget_problems(engine, jobs, execution)
+        return
     if engine.name != "vllm":
         raise ValueError("Continuous evaluation requires vLLM; no silent sequential fallback")
     from vllm import SamplingParams

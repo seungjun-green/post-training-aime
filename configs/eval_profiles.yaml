@@ -1,4 +1,42 @@
 # Overrides to eval_english.yaml; prompts, data pins, token limits and scoring stay shared.
+sample1_budget:
+  temperature: 1.0
+  top_p: 0.7
+  pass_k: [1]
+  samples:
+    aime_2024: 1
+    aime_2025: 1
+    aime_2026: 1
+    amc23: 1
+    math_500: 1
+  execution:
+    max_pending_problems: 64
+  budget_forcing:
+    min_reasoning_tokens: 0
+    max_reasoning_tokens: 18432
+    # Includes injected delimiter/answer-cue tokens; total stays <= 20,480.
+    answer_budget_tokens: 2048
+    end_thinking: "</think>"
+    answer_prefix: "\n\nFinal Answer:"
+sample1_budget16k:
+  temperature: 1.0
+  top_p: 0.7
+  pass_k: [1]
+  samples:
+    aime_2024: 1
+    aime_2025: 1
+    aime_2026: 1
+    amc23: 1
+    math_500: 1
+  execution:
+    max_pending_problems: 64
+  budget_forcing:
+    min_reasoning_tokens: 0
+    max_reasoning_tokens: 16384
+    # Includes injected delimiter/answer-cue tokens; total stays <= 20,480.
+    answer_budget_tokens: 4096
+    end_thinking: "</think>"
+    answer_prefix: "\n\nFinal Answer:"
 sample1:
   temperature: 1.0
   top_p: 0.7

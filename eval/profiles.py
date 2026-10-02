@@ -11,14 +11,14 @@ from common.io import digest, write_json
 from eval.run_english_eval import ROOT, code_fingerprint
 from eval.run_eval import bind_runtime
 
-PROFILE_NAMES = ("greedy", "sample8", "sample1")
+PROFILE_NAMES = ("greedy", "sample8", "sample1", "sample1_budget16k", "sample1_budget")
 
 
-def load_profile(name, config, execution):
+def load_profile(name, config, execution, *, budget_override=None):
     if name not in PROFILE_NAMES:
         raise ValueError(f"Unknown evaluation profile: {name}")
     profile = yaml.safe_load((ROOT / "configs/eval_profiles.yaml").read_text())[name]
-    if set(profile) != {"temperature", "top_p", "pass_k", "samples", "execution"}:
+    if set(profile) - {"budget_forcing"} != {"temperature", "top_p", "pass_k", "samples", "execution"}:
         raise ValueError("Unexpected profile settings")
     config, execution = deepcopy(config), deepcopy(execution)
     if set(profile["samples"]) != set(config["datasets"]):
@@ -28,11 +28,22 @@ def load_profile(name, config, execution):
     for dataset, n in profile["samples"].items():
         config["datasets"][dataset]["n"] = n
     execution.update(profile["execution"])
+    config.pop("budget_forcing", None)
+    if "budget_forcing" in profile:
+        config["budget_forcing"] = deepcopy(profile["budget_forcing"])
+    if budget_override is not None:
+        if name != "sample1_budget":
+            raise ValueError("Custom budgets require the sample1_budget profile")
+        config["budget_forcing"] = deepcopy(budget_override)
     validate_profile_config(config)
     return config, execution
 
 
 def validate_profile_config(config):
+    if "budget_forcing" in config:
+        from eval.budget_generation import validate_budget
+
+        validate_budget(config)
     if config["engine"] != "vllm" or config["tensor_parallel_size"] != 1:
         raise ValueError("Evaluation requires vLLM and one GPU")
     if not 0 < config["max_new_tokens"] < config["max_model_len"]:
@@ -51,10 +62,15 @@ def validate_profile_config(config):
         raise ValueError("Invalid pass@k values")
 
 
-def profile_root(output_root, name):
+def profile_root(output_root, name, budget=None):
     if name not in PROFILE_NAMES:
         raise ValueError(f"Unknown evaluation profile: {name}")
-    return Path(output_root) / "profiles" / name
+    root = Path(output_root) / "profiles" / name
+    if name == "sample1_budget":
+        if budget is None:
+            budget = yaml.safe_load((ROOT / "configs/eval_profiles.yaml").read_text())[name]["budget_forcing"]
+        root /= f"thinking_{budget['max_reasoning_tokens']}_answer_{budget['answer_budget_tokens']}"
+    return root
 
 
 def bind_profile_protocol(root, name, config, execution, suite, stage, selected, smoke,

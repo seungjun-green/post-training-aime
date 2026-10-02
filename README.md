@@ -66,18 +66,39 @@ the HF `main` revision to a commit, verifies the expected full dataset digest an
 decontamination IDs, skips missing outputs, and drops full formatted sequences over 20,480 tokens.
 The supplied export retains 718 examples (six missing and 272 overlength exclusions).
 Checkpoints and logs use `sft_s1k_deepseek_pro`, preserving the earlier `sft_s1k` run.
-Set the evaluation notebook's `CONFIG` to `configs/stage1_sft_deepseek_pro.yaml` when evaluating
-these checkpoints; evaluation defaults remain unchanged. The old `configs/stage1_sft.yaml`
+`evaluate_stage1_sft_temp1.ipynb` now selects `configs/stage1_sft_deepseek_pro.yaml` and the new
+run's epoch-5 checkpoint by default. The greedy evaluation notebook retains its original target.
+The old `configs/stage1_sft.yaml`
 continues to reproduce the original R1-column run. Preparation reports record both exclusion counts.
 Push these code changes to GitHub before running the Colab training notebook.
 
 For **temperature 1.0 with one answer per problem**, use
 [`evaluate_stage1_sft_temp1.ipynb`](notebooks/evaluate_stage1_sft_temp1.ipynb).
-Its `sample1` profile uses top-p 0.7, all five benchmarks (630 responses), the existing
-20,480-token output limit, and epoch 5 by default; earlier epochs remain optional.
-Results resume under `profiles/sample1/full/results/stage1/`, separate from other profiles.
-No baseline run is required first. Push the profile and notebook changes to the configured
-GitHub repository before running Colab setup, then enable `RUN_STAGE1_EVAL`.
+Its default `sample1_budget` profile uses top-p 0.7, all five benchmarks (630 responses),
+and the Pro SFT run's epoch 5; earlier epochs remain optional. Set `MAX_THINKING_TOKENS` in
+the notebook (default **18,432**). Minimum reasoning stays zero, and the answer allowance is
+computed as **20,480 minus the thinking cap** (default **2,048**). At the reasoning cap it
+inserts `</think>` and `Final Answer:` and continues generation. Natural `</think>` starts the
+answer phase earlier; natural EOS is respected, with no forced "Wait" extension. Injected tokens
+count against the answer allowance, so total continuation tokens remain at most 20,480.
+Both phases retain continuous batching, sampling settings, and the existing scoring code.
+
+The default result is `profiles/sample1_budget/thinking_18432_answer_2048/full/results/stage1/sft_s1k_deepseek_pro.json` under
+the evaluation Drive root. Raw records log forced transitions and reasoning/answer/injected token
+counts. The token-length metric includes inserted tokens. Console logs include the run name and
+budget. Each thinking/answer split gets a separate results folder. Rerun checkpoint checks after
+editing the cap; that cell saves the resolved budget YAML to `TRAIN_ROOT/eval_configs/` and passes
+it to both smoke/full runs using `--budget_config`. The original `sample1_budget16k` CLI profile
+remains available with its fixed 16,384/4,096 split.
+Change CONFIG to `configs/stage1_sft.yaml` to re-evaluate the old R1 checkpoint with the same
+budget forcing. The `sample1` option disables budget forcing. Existing protocols bind evaluator
+code: use the original code to resume an old run, or a fresh BASELINE_ROOT for new plain-sample1
+results. Old responses are not imported into the new budget-forcing profile.
+
+No baseline run is required. Push all updated code/configs to GitHub before Colab setup.
+Enable `RUN_SMOKE_EVAL` for a separate five-problem smoke test, then `RUN_STAGE1_EVAL` for
+the full run. Both default off. Local tests cover forced/natural transitions, total budgets,
+scoring/resume, cancellation, and notebook commands; live GPU inference must be checked in Colab.
 
 The English SFT implementation and separate Colab launchers are ready for GPU validation:
 [`train_stage1_sft.ipynb`](notebooks/train_stage1_sft.ipynb) trains for five epochs and saves
