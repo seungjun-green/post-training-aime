@@ -92,6 +92,25 @@ def cells():
     ]
 
 
+def pro_train_cells():
+    """Explicitly named launcher sharing the existing Pro training workflow."""
+    notebook_cells = cells()
+    notebook_cells[0].source = notebook_cells[0].source.replace(
+        "# Stage 1 — English s1-style SFT on EXAONE",
+        "# Stage 1 — DeepSeek Pro SFT on EXAONE",
+    )
+    notebook_cells[0].source += (
+        "\n\nTraining columns: `deepseek-v4-pro_reasoning` and `deepseek-v4-pro_answer`."
+        "\nThe 20,480-token limit counts the full prompt, reasoning, answer, and chat template."
+        "\n\nDrive outputs beneath `TRAIN_ROOT`:\n"
+        "- Checkpoints: `checkpoints/stage1/sft_s1k_deepseek_pro/epoch_1/` through `epoch_5/`.\n"
+        "- Loss history: `logs/stage1/sft_s1k_deepseek_pro/steps.jsonl`.\n"
+        "\nRun setup and preparation first, inspect the data report, then set "
+        "`RUN_TRAINING = True` in the last cell."
+    )
+    return notebook_cells
+
+
 def eval_cells():
     return [
         markdown("""
@@ -448,5 +467,6 @@ def budget_eval_cells():
 
 if __name__ == "__main__":
     write_notebook("train_stage1_sft.ipynb", cells())
+    write_notebook("train_stage1_sft_deepseek_pro.ipynb", pro_train_cells())
     write_notebook("evaluate_stage1_sft.ipynb", eval_cells())
     write_notebook("evaluate_stage1_sft_temp1.ipynb", budget_eval_cells())

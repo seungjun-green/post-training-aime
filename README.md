@@ -59,6 +59,12 @@ Rebuild with `python scripts/build_s1_upload_notebook.py`.
 
 ## Stage 1 SFT implementation
 
+For an explicitly named Pro training launcher, open
+[`train_stage1_sft_deepseek_pro.ipynb`](notebooks/train_stage1_sft_deepseek_pro.ipynb).
+It shares the existing training workflow: Pro reasoning plus answer, five epochs from the
+original base model, full-sequence filtering at 20,480 tokens, and Drive checkpoints/loss logs.
+Run setup and preparation, then enable `RUN_TRAINING` in the last cell. It does not run evaluation.
+
 `train_stage1_sft.ipynb` now defaults to `configs/stage1_sft_deepseek_pro.yaml`: the original
 EXAONE base model trains on `deepseek-v4-pro_reasoning` plus `deepseek-v4-pro_answer`, with
 all previous training hyperparameters unchanged. Publish the Pro export first. The loader resolves
