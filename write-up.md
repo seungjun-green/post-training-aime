@@ -73,8 +73,12 @@ training sequences longer than 20,480 tokens, 718 examples remain (272 overlengt
 This gives 45 optimizer steps per epoch and 225 across five epochs. New checkpoints/logs use
 `sft_s1k_deepseek_pro`; the old config and outputs remain separate. The dataset's current HF
 revision is resolved to an immutable commit and its exact content is checked and recorded.
-`evaluate_stage1_sft_temp1.ipynb` selects this run's epoch-5 checkpoint: temperature 1.0,
-top-p 0.7, one answer per problem on all five benchmarks. The `sample1_budget` profile
+`evaluate_stage1_sft_temp1.ipynb` retests the **previous `sft_s1k/epoch_5` checkpoint** using
+`configs/stage1_sft.yaml` by default. The notebook now offers `MODEL_KIND` (SFT or base)
+and `TEMPERATURE` controls. Base mode loads the pinned original EXAONE model without checkpoint
+checks or budget forcing; SFT applies budget forcing. Both use one answer per problem on all five
+benchmarks. Temperature defaults to 1.0/top-p 0.7; zero uses greedy decoding/top-p 1.0.
+Resolved sampling settings and model modes have separate result/log locations. The `sample1_budget` profile
 adds s1-style early-exit budget forcing with an editable thinking cap (default 18,432, minimum
 zero) and the remaining 2,048 tokens including any injected `</think>` and final-answer cue.
 The notebook saves a resolved budget YAML on Drive, and each budget split has its own output

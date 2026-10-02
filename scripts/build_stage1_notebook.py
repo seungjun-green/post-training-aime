@@ -271,115 +271,179 @@ def sample1_eval_cells():
 
 
 def budget_eval_cells():
-    notebook_cells = sample1_eval_cells()
-    notebook_cells[0] = markdown("""
-        # Stage 1 — Epoch 5 evaluation with budget forcing
-        Default checkpoint: `TRAIN_ROOT/checkpoints/stage1/sft_s1k_deepseek_pro/epoch_5/`.
-        Evaluate **AIME 2024, AIME 2025, AIME 2026, AMC 2023, and MATH-500** with
-        **temperature 1.0, top-p 0.7, one answer per problem** (630 responses).
+    setup = eval_cells()[2]
+    setup.source = setup.source.replace(
+        'print("Evaluation code commit:", git("rev-parse", "HEAD"))',
+        'print("Evaluation code commit:", git("rev-parse", "HEAD"))\n'
+        'if not (Path(CODE_ROOT) / "eval/budget_generation.py").is_file():\n'
+        '    raise FileNotFoundError("Push all evaluation updates to GitHub main, then rerun setup.")',
+    )
+    return [
+        markdown("""
+        # Evaluate the previous SFT checkpoint or the base model
+        Choose **MODEL_KIND** (`sft` or `base`) and **TEMPERATURE** in Settings.
+        Both modes evaluate **AIME 2024, AIME 2025, AIME 2026, AMC 2023, and MATH-500**,
+        with one answer per problem (630 responses), the existing English prompt, and a total
+        completion allowance of 20,480 tokens. Continuous batching remains enabled.
 
-        Set **MAX_THINKING_TOKENS** in the settings cell. Its default is **18,432**;
-        the answer allowance is automatically **20,480 − MAX_THINKING_TOKENS** (default **2,048**).
-        Minimum reasoning stays zero. At the cap, append `</think>`
-        and `Final Answer:` and continue the same assistant response. A natural `</think>`
-        starts the answer phase earlier; natural EOS is respected. No "Wait" extension is used.
-        The answer allowance includes injected delimiter/cue tokens, keeping the full continuation
-        within **20,480 tokens**. The first-phase count includes the generated opening think marker.
+        - **sft** (default): the previous `sft_s1k/epoch_5` checkpoint, with budget forcing.
+          MAX_THINKING_TOKENS defaults to 18,432; the remaining 2,048 tokens are reserved for
+          the answer, including any injected `</think>` and `Final Answer:` cue. Minimum
+          reasoning is zero, natural completion is respected, and no "Wait" extension is used.
+        - **base**: the pinned original `LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct`, with ordinary
+          generation and **no budget forcing**. It does not require any SFT checkpoint.
+          MAX_THINKING_TOKENS and earlier-epoch selection are ignored in this mode.
 
-        Each budget gets a separate folder, by default
-        `profiles/sample1_budget/thinking_18432_answer_2048/`. Changing the cap starts a separate
-        evaluation; rerun the checkpoint-check cell after editing settings. The resolved budget
-        YAML is saved to Drive under `TRAIN_ROOT/eval_configs/` and used by both smoke and full runs.
-        Raw records include whether the transition was forced and each phase's token counts.
-        Training, prompts, benchmarks, and answer scoring are unchanged. No baseline is required.
+        TEMPERATURE defaults to 1.0. Set it to 0 for greedy decoding; top-p is 1.0 at zero
+        temperature and 0.7 otherwise. Base and SFT are evaluated using different decoding
+        procedures as requested: only SFT receives the forced transition into answering.
+        Neither mode requires a completed baseline evaluation.
 
-        Use the **RTX PRO 6000 Blackwell 96GB**, enable `HF_TOKEN`, and push the updated Python
-        files/configs to GitHub main before setup. Run the optional five-problem smoke cell first,
-        then enable the separate full evaluation cell. Default Run all performs setup/checks only.
-        Epoch 5 is selected by default; earlier epochs remain optional.
+        Use the **RTX PRO 6000 Blackwell 96GB** and enable the `HF_TOKEN` secret. Push the
+        updated project code/configs to GitHub main before setup. Default Run all performs
+        setup/checks only; the smoke and full run cells are separate and initially disabled.
+        After changing settings, rerun **Prepare selected model and settings** before evaluating.
+        Resolved YAML settings are saved on Drive. Model mode, temperature, and thinking budget
+        have separate results/logs, so changing settings does not reuse earlier responses.
+        """),
+        code("""
+        # @title Settings
+        REPO_URL = "https://github.com/seungjun-green/post-training-aime.git"
+        CODE_ROOT = "/content/lg-aime-stage1-eval"
+        TRAIN_ROOT = "/content/drive/MyDrive/LG-AIME-Stage1"
+        BASELINE_ROOT = "/content/drive/MyDrive/LG-AIME-English-Eval-compatible"
+        EVAL_ENV = "/content/lg-eval-env"
+        CONFIG = "configs/stage1_sft.yaml"
+        MODEL_KIND = "sft" # @param ["sft", "base"]
+        TEMPERATURE = 1.0 # @param {type:"number"}
+        MAX_THINKING_TOKENS = 18432 # @param {type:"integer"}
+        """),
+        setup,
+        markdown("""
+        ## Prepare selected model and settings
+        For SFT, keep TRAIN_ROOT pointed at the original training folder. Epoch 5 is selected
+        by default; optionally enable earlier epochs below. Base mode loads the original model
+        directly from Hugging Face at its pinned revision and skips checkpoint checks entirely.
 
-        To test the **previous R1 SFT checkpoint** with the same budget forcing, change CONFIG
-        below to `configs/stage1_sft.yaml`; this selects `sft_s1k/epoch_5` and a separate result name.
-        To run without budget forcing, select `sample1` and use a fresh BASELINE_ROOT if that
-        profile already has manifests from an older evaluator version. Existing runs require
-        their original code/settings to resume; old generations are never imported here.
-        """)
-    for cell in notebook_cells:
-        if cell.cell_type == "code":
-            cell.source = cell.source.replace(
-                'EVAL_PROFILE = "sample1"  # temperature 1.0; one answer on every benchmark',
-                'EVAL_PROFILE = "sample1_budget" # @param ["sample1_budget", "sample1"]\n'
-                'MAX_THINKING_TOKENS = 18432 # @param {type:"integer"}',
-            )
-            cell.source = cell.source.replace(
-                'if not (Path(CODE_ROOT) / CONFIG).is_file():',
-                'if (not (Path(CODE_ROOT) / CONFIG).is_file()\n'
-                '        or not (Path(CODE_ROOT) / "eval/budget_generation.py").is_file()):',
-            ).replace(
-                'f"Missing {CONFIG}. Push the Pro SFT updates to GitHub main, then rerun setup."',
-                'f"Missing {CONFIG} or budget-forcing code. Push all evaluation updates to GitHub main, then rerun setup."',
-            )
-            if "progress_totals =" in cell.source:
-                cell.source = cell.source.replace(
-                    "from eval.profiles import profile_root",
-                    "from eval.profiles import profile_root, load_profile\n"
-                    "eval_config = yaml.safe_load((Path(CODE_ROOT) / 'configs/eval_english.yaml').read_text())\n"
-                    "execution = yaml.safe_load((Path(CODE_ROOT) / 'configs/eval_execution.yaml').read_text())\n"
-                    "budget = None\n"
-                    "BUDGET_ARGS = []\n"
-                    "EVAL_LABEL = EVAL_PROFILE\n"
-                    "if EVAL_PROFILE == 'sample1_budget':\n"
-                    "    if type(MAX_THINKING_TOKENS) is not int or not 0 < MAX_THINKING_TOKENS < eval_config['max_new_tokens']:\n"
-                    "        raise ValueError('MAX_THINKING_TOKENS must be a positive integer below the total token budget')\n"
-                    "    budget = yaml.safe_load((Path(CODE_ROOT) / 'configs/eval_profiles.yaml').read_text())[EVAL_PROFILE]['budget_forcing']\n"
-                    "    budget['max_reasoning_tokens'] = MAX_THINKING_TOKENS\n"
-                    "    budget['answer_budget_tokens'] = eval_config['max_new_tokens'] - MAX_THINKING_TOKENS\n"
-                    "    load_profile(EVAL_PROFILE, eval_config, execution, budget_override=budget)\n"
-                    "    EVAL_LABEL += f\"_thinking_{MAX_THINKING_TOKENS}_answer_{budget['answer_budget_tokens']}\"\n"
-                    "    budget_path = Path(TRAIN_ROOT) / 'eval_configs' / (EVAL_LABEL + '.yaml')\n"
-                    "    budget_path.parent.mkdir(parents=True, exist_ok=True)\n"
-                    "    budget_path.write_text(yaml.safe_dump(budget, sort_keys=False))\n"
-                    "    BUDGET_ARGS = ['--budget_config', str(budget_path)]\n"
-                    "    print('Budget config saved:', budget_path)",
-                ).replace(
-                    "profile_root(BASELINE_ROOT, EVAL_PROFILE)",
-                    "profile_root(BASELINE_ROOT, EVAL_PROFILE, budget)",
-                )
-                cell.source += '\nprint("Evaluation profile:", EVAL_PROFILE)\nprint("Budget settings:", budget or "off")'
-            if "RUN_STAGE1_EVAL = False" in cell.source:
-                cell.source = cell.source.replace(
-                    "        run_logged(command,", "        command.extend(BUDGET_ARGS)\n        run_logged(command,"
-                ).replace("_{EVAL_PROFILE}_console.log", "_{EVAL_LABEL}_console.log")
-        elif cell.source.startswith("## Full evaluation"):
-            cell.source = cell.source.replace(
-                "`configs/eval_profiles.yaml` defines `sample1`: temperature 1.0, top-p 0.7,",
-                "`configs/eval_profiles.yaml` defines the selected profile: temperature 1.0, top-p 0.7,",
-            )
-    smoke = [markdown("""
-        ## Optional smoke test — five problems, epoch 5
-        Enable this to test one problem from each benchmark before the full run. It uses the same
-        checkpoint, sampling, and budget settings. Smoke results and raw generations are isolated
-        under `profiles/<profile>/smoke/`; they are not counted as full evaluation results.
-        Check `budget_forcing` in the generations JSONL for phase lengths and `forced` transitions.
-        A short smoke response may finish naturally without exercising the reasoning cap.
-        """), code("""
+        The printed destination is the full-results path. Smoke results use the parallel `smoke/`
+        directory. Both contain protocol/config manifests and raw generations. Budget-forced raw
+        records also include forced-transition flags and phase token counts. Use the same code
+        and settings to resume a run; old evaluator versions' manifests are not silently reused.
+        """),
+        code("""
+        import yaml
+        from eval.profiles import load_profile, profile_root
+        INCLUDE_EARLIER_EPOCHS = False
+        if MODEL_KIND not in {"sft", "base"}:
+            raise ValueError("MODEL_KIND must be sft or base")
+        cfg = yaml.safe_load((Path(CODE_ROOT) / CONFIG).read_text())
+        eval_config = yaml.safe_load((Path(CODE_ROOT) / "configs/eval_english.yaml").read_text())
+        execution = yaml.safe_load((Path(CODE_ROOT) / "configs/eval_execution.yaml").read_text())
+        EVAL_PROFILE = "sample1_budget" if MODEL_KIND == "sft" else "sample1"
+        sampling = {"temperature": TEMPERATURE, "top_p": 1.0 if TEMPERATURE == 0 else 0.7}
+        budget = None
+        if MODEL_KIND == "sft":
+            if type(MAX_THINKING_TOKENS) is not int or not 0 < MAX_THINKING_TOKENS < eval_config["max_new_tokens"]:
+                raise ValueError("MAX_THINKING_TOKENS must be a positive integer below the total token budget")
+            budget = yaml.safe_load((Path(CODE_ROOT) / "configs/eval_profiles.yaml").read_text())[EVAL_PROFILE]["budget_forcing"]
+            budget["max_reasoning_tokens"] = MAX_THINKING_TOKENS
+            budget["answer_budget_tokens"] = eval_config["max_new_tokens"] - MAX_THINKING_TOKENS
+        resolved_config, _ = load_profile(EVAL_PROFILE, eval_config, execution,
+                                         budget_override=budget, sampling_override=sampling)
+        EVAL_LABEL = f"{MODEL_KIND}_{EVAL_PROFILE}_temperature_{float(TEMPERATURE)}"
+        if budget:
+            EVAL_LABEL += f"_thinking_{MAX_THINKING_TOKENS}_answer_{budget['answer_budget_tokens']}"
+        config_dir = Path(TRAIN_ROOT) / "eval_configs"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        sampling_path = config_dir / (EVAL_LABEL + "_sampling.yaml")
+        sampling_path.write_text(yaml.safe_dump(sampling, sort_keys=False))
+        RUN_ARGS = ["--sampling_config", str(sampling_path)]
+        if budget:
+            budget_path = config_dir / (EVAL_LABEL + "_budget.yaml")
+            budget_path.write_text(yaml.safe_dump(budget, sort_keys=False))
+            RUN_ARGS += ["--budget_config", str(budget_path)]
+        eval_runs = []
+        run_identities = set()
+        if MODEL_KIND == "base":
+            EVAL_STAGE = "stage0"
+            MODEL_REVISION = cfg["model"]["revision"]
+            eval_runs = [(None, cfg["model"]["repo"], "baseline_english")]
+        else:
+            EVAL_STAGE = cfg["stage"]
+            MODEL_REVISION = None
+            epochs = int(cfg["training"]["num_train_epochs"])
+            selected_epochs = [epochs]
+            if INCLUDE_EARLIER_EPOCHS:
+                selected_epochs.extend(range(1, epochs))
+            checkpoint_root = Path(TRAIN_ROOT) / "checkpoints" / cfg["stage"] / cfg["run_name"]
+            for epoch in selected_epochs:
+                checkpoint = checkpoint_root / f"epoch_{epoch}"
+                marker_path = checkpoint / "stage1_checkpoint.json"
+                if not marker_path.is_file():
+                    raise FileNotFoundError(f"Missing saved SFT checkpoint marker: {marker_path}. Check TRAIN_ROOT.")
+                marker = json.loads(marker_path.read_text())
+                if marker["epoch"] != epoch:
+                    raise ValueError(f"Checkpoint epoch mismatch: {checkpoint}")
+                run_identities.add(marker["run_identity"])
+                run_name = cfg["run_name"] if epoch == epochs else f"{cfg['run_name']}_epoch{epoch}"
+                eval_runs.append((epoch, checkpoint, run_name))
+            if len(run_identities) != 1:
+                raise ValueError("Selected epoch checkpoints must belong to the same training run")
+        result_root = profile_root(BASELINE_ROOT, EVAL_PROFILE, budget, sampling) / "full/results"
+        suite = json.loads((Path(CODE_ROOT) / "configs/english_eval_suite.json").read_text())
+        progress_totals = {name: entry["rows"] for name, entry in suite["datasets"].items()}
+
+        def evaluation_command(checkpoint, run_name, smoke=False):
+            command = [str(Path(EVAL_ENV) / "bin/python"), "-m", "eval.run_batched_eval",
+                       "--model", str(checkpoint), "--stage", EVAL_STAGE, "--run_name", run_name,
+                       "--output_root", BASELINE_ROOT, "--profile", EVAL_PROFILE,
+                       "--execution_config", "configs/eval_execution.yaml"] + RUN_ARGS
+            if MODEL_REVISION is not None:
+                command += ["--revision", MODEL_REVISION]
+            if smoke:
+                command += ["--smoke"]
+            return command
+
+        print("Selected model:", MODEL_KIND, "Sampling:", sampling)
+        print("Budget forcing:", budget or "off")
+        print("Benchmarks:", ", ".join(progress_totals))
+        for epoch, checkpoint, run_name in eval_runs:
+            print(f"{checkpoint} -> {result_root / EVAL_STAGE / (run_name + '.json')}")
+        print("Resolved sampling config:", sampling_path)
+        """),
+        markdown("""
+        ## Optional smoke test — five problems
+        Run one problem per benchmark using the selected model and settings. SFT smoke uses
+        epoch 5. Base smoke requires no SFT checkpoint. Results are separate from full evaluation.
+        """),
+        code("""
         RUN_SMOKE_EVAL = False
         if RUN_SMOKE_EVAL:
             epoch, checkpoint, run_name = eval_runs[0]
-            command = [str(Path(EVAL_ENV) / "bin/python"), "-m", "eval.run_batched_eval",
-                       "--model", str(checkpoint), "--stage", cfg["stage"], "--run_name", run_name,
-                       "--output_root", BASELINE_ROOT, "--profile", EVAL_PROFILE,
-                       "--execution_config", "configs/eval_execution.yaml", "--smoke"]
-            command.extend(BUDGET_ARGS)
-            run_logged(command, cwd=CODE_ROOT,
+            run_logged(evaluation_command(checkpoint, run_name, smoke=True), cwd=CODE_ROOT,
                        log_path=Path(TRAIN_ROOT) / f"{run_name}_{EVAL_LABEL}_smoke_console.log",
                        progress_totals={name: 1 for name in progress_totals})
         else:
             print("Smoke evaluation is off. Enable RUN_SMOKE_EVAL to test five problems.")
-        """)]
-    index = next(i for i, cell in enumerate(notebook_cells) if cell.source.startswith("## Full evaluation"))
-    notebook_cells[index:index] = smoke
-    return notebook_cells
+        """),
+        markdown("""
+        ## Full evaluation — all five benchmarks
+        Enable the checkbox to evaluate the selected model. SFT defaults to epoch 5, followed
+        by epochs 1–4 only when explicitly selected above. Base runs once. Completed problems
+        are saved durably and reused on resume with identical model/code/settings. Summary JSON,
+        per-problem journals, and raw generations are written to the printed result directory.
+        """),
+        code("""
+        RUN_STAGE1_EVAL = False # @param {type:"boolean"}
+        if RUN_STAGE1_EVAL:
+            for epoch, checkpoint, run_name in eval_runs:
+                run_logged(evaluation_command(checkpoint, run_name), cwd=CODE_ROOT,
+                           log_path=Path(TRAIN_ROOT) / f"{run_name}_{EVAL_LABEL}_console.log",
+                           progress_totals=progress_totals)
+        else:
+            print("Evaluation is off. Enable RUN_STAGE1_EVAL to evaluate the selected model.")
+        """),
+    ]
 
 
 if __name__ == "__main__":

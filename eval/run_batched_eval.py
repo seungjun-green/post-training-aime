@@ -220,6 +220,7 @@ def main():
     parser.add_argument("--profile", choices=PROFILE_NAMES,
                         help="Named profile; stores runs under output_root/profiles/PROFILE")
     parser.add_argument("--budget_config", help="YAML budget override for --profile sample1_budget")
+    parser.add_argument("--sampling_config", help="YAML temperature/top_p for a single-answer profile")
     parser.add_argument("--smoke", action="store_true",
                         help="With --profile: one problem/answer per benchmark, isolated from full runs")
     parser.add_argument("--validate-only", action="store_true")
@@ -235,6 +236,8 @@ def main():
         parser.error("--smoke requires a named --profile")
     if args.budget_config and args.profile != "sample1_budget":
         parser.error("--budget_config requires --profile sample1_budget")
+    if args.sampling_config and args.profile not in {"sample1", "sample1_budget"}:
+        parser.error("--sampling_config requires --profile sample1 or sample1_budget")
     config = yaml.safe_load(Path(args.config).read_text())
     execution = yaml.safe_load(Path(args.execution_config).read_text())
     suite = json.loads(Path(args.suite).read_text())
@@ -242,7 +245,11 @@ def main():
         budget_override = yaml.safe_load(Path(args.budget_config).read_text()) if args.budget_config else None
         if args.budget_config and not isinstance(budget_override, dict):
             parser.error("--budget_config must contain a YAML settings mapping")
-        config, execution = load_profile(args.profile, config, execution, budget_override=budget_override)
+        sampling_override = yaml.safe_load(Path(args.sampling_config).read_text()) if args.sampling_config else None
+        if args.sampling_config and not isinstance(sampling_override, dict):
+            parser.error("--sampling_config must contain a YAML settings mapping")
+        config, execution = load_profile(args.profile, config, execution,
+                                        budget_override=budget_override, sampling_override=sampling_override)
     else:
         validate_config(config)
     validate_execution(execution)
@@ -255,7 +262,8 @@ def main():
         for spec in config["datasets"].values():
             spec["n"] = 1
     selected = {name: [r["id"] for r in rows] for name, rows in datasets.items()}
-    parent = profile_root(args.output_root, args.profile, config.get("budget_forcing")) if args.profile else Path(args.output_root)
+    parent = profile_root(args.output_root, args.profile, config.get("budget_forcing"),
+                          sampling_override) if args.profile else Path(args.output_root)
     root = parent / ("smoke" if args.smoke else "full")
     if args.profile:
         protocol_id = bind_profile_protocol(

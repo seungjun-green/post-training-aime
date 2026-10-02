@@ -283,14 +283,14 @@ def test_stage1_notebooks_are_separate_thin_and_fresh(monkeypatch, kind):
             assert cell.execution_count is None and not cell.outputs
 
 
-@pytest.mark.parametrize("profile", ["greedy", "sample8", "sample1", "sample1_budget16k", "sample1_budget"])
+@pytest.mark.parametrize("profile", ["greedy", "sample8", "sample1"])
 def test_evaluation_notebook_prioritizes_final_epoch_and_makes_others_optional(tmp_path, monkeypatch, profile):
     pytest.importorskip("nbformat")
     monkeypatch.syspath_prepend(str(ROOT / "scripts"))
     from build_stage1_notebook import eval_cells, sample1_eval_cells, budget_eval_cells
 
     train_root, baseline_root = tmp_path / "training", tmp_path / "baseline"
-    pro = profile in {"sample1", "sample1_budget16k", "sample1_budget"}
+    pro = profile == "sample1"
     run_name = "sft_s1k_deepseek_pro" if pro else "sft_s1k"
     config_path = "configs/stage1_sft_deepseek_pro.yaml" if pro else "configs/stage1_sft.yaml"
     for epoch in range(1, 6):
@@ -336,7 +336,7 @@ def test_evaluation_notebook_prioritizes_final_epoch_and_makes_others_optional(t
             "aime_2024": 30, "aime_2025": 30, "aime_2026": 30, "amc23": 40, "math_500": 500,
         }
         label = profile + "_thinking_18432_answer_2048" if profile == "sample1_budget" else profile
-        log_name = (f"{expected_name}_epoch{epoch}_{label}_console.log" if pro
+        log_name = (f"{expected_name}_epoch{epoch}_{label}_console.log" if profile.startswith("sample1")
                     else f"full_eval_epoch{epoch}_{profile}_console.log")
         assert kwargs["log_path"] == train_root / log_name
         assert Path(command[command.index("--model") + 1]).parent.name == run_name

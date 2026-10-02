@@ -158,11 +158,14 @@ def test_notebook_smoke_runs_only_final_checkpoint_and_all_five(monkeypatch, tmp
     source = next(cell.source for cell in budget_eval_cells()
                   if cell.cell_type == "code" and "RUN_SMOKE_EVAL = False" in cell.source)
     calls = []
-    context = {"Path": Path, "eval_runs": [(5, tmp_path / "epoch_5", "pro")],
+    context = {"Path": Path, "eval_runs": [(5, tmp_path / "epoch_5", "sft_s1k")],
                "cfg": {"stage": "stage1"}, "EVAL_ENV": "/env", "CODE_ROOT": str(tmp_path),
                "TRAIN_ROOT": str(tmp_path), "BASELINE_ROOT": str(tmp_path / "results"),
                "EVAL_PROFILE": "sample1_budget", "EVAL_LABEL": "sample1_budget_thinking_18432_answer_2048",
                "BUDGET_ARGS": ["--budget_config", "/drive/budget.yaml"],
+               "evaluation_command": lambda checkpoint, run_name, smoke=False: [
+                   "python", "--model", str(checkpoint), "--profile", "sample1_budget",
+                   "--budget_config", "/drive/budget.yaml"] + (["--smoke"] if smoke else []),
                "progress_totals": {k: 30 for k in ["aime_2024", "aime_2025", "aime_2026", "amc23", "math_500"]},
                "run_logged": lambda command, **kwargs: calls.append((command, kwargs))}
     exec(source, context)
@@ -202,4 +205,5 @@ def test_notebook_rejects_invalid_custom_cap_before_reading_checkpoint(monkeypat
                   if cell.cell_type == "code" and "run_identities = set()" in cell.source)
     with pytest.raises(ValueError, match="MAX_THINKING_TOKENS"):
         exec(source, {"Path": Path, "CODE_ROOT": str(Path.cwd()), "EVAL_PROFILE": "sample1_budget",
-                      "MAX_THINKING_TOKENS": maximum, "TRAIN_ROOT": str(tmp_path)})
+                      "MAX_THINKING_TOKENS": maximum, "TRAIN_ROOT": str(tmp_path),
+                      "MODEL_KIND": "sft", "TEMPERATURE": 1.0, "CONFIG": "configs/stage1_sft.yaml"})

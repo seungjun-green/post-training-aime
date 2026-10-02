@@ -14,7 +14,7 @@ from eval.run_eval import bind_runtime
 PROFILE_NAMES = ("greedy", "sample8", "sample1", "sample1_budget16k", "sample1_budget")
 
 
-def load_profile(name, config, execution, *, budget_override=None):
+def load_profile(name, config, execution, *, budget_override=None, sampling_override=None):
     if name not in PROFILE_NAMES:
         raise ValueError(f"Unknown evaluation profile: {name}")
     profile = yaml.safe_load((ROOT / "configs/eval_profiles.yaml").read_text())[name]
@@ -35,6 +35,15 @@ def load_profile(name, config, execution, *, budget_override=None):
         if name != "sample1_budget":
             raise ValueError("Custom budgets require the sample1_budget profile")
         config["budget_forcing"] = deepcopy(budget_override)
+    if sampling_override is not None:
+        if name not in {"sample1", "sample1_budget"}:
+            raise ValueError("Custom sampling requires a single-answer profile")
+        if not isinstance(sampling_override, dict) or set(sampling_override) != {"temperature", "top_p"}:
+            raise ValueError("Sampling config must contain temperature and top_p")
+        for key, value in sampling_override.items():
+            if type(value) not in {int, float} or not math.isfinite(value):
+                raise ValueError(f"{key} must be a finite number")
+        config.update({key: float(value) for key, value in sampling_override.items()})
     validate_profile_config(config)
     return config, execution
 
@@ -62,7 +71,7 @@ def validate_profile_config(config):
         raise ValueError("Invalid pass@k values")
 
 
-def profile_root(output_root, name, budget=None):
+def profile_root(output_root, name, budget=None, sampling=None):
     if name not in PROFILE_NAMES:
         raise ValueError(f"Unknown evaluation profile: {name}")
     root = Path(output_root) / "profiles" / name
@@ -70,6 +79,8 @@ def profile_root(output_root, name, budget=None):
         if budget is None:
             budget = yaml.safe_load((ROOT / "configs/eval_profiles.yaml").read_text())[name]["budget_forcing"]
         root /= f"thinking_{budget['max_reasoning_tokens']}_answer_{budget['answer_budget_tokens']}"
+    if sampling is not None:
+        root /= f"temperature_{float(sampling['temperature'])}_top_p_{float(sampling['top_p'])}"
     return root
 
 

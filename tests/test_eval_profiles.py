@@ -222,9 +222,10 @@ def test_temperature_one_sft_notebook_is_fresh_and_defaults_to_budget_forcing(mo
         if cell.cell_type == "code":
             compile(cell.source, "temperature_one_sft", "exec")
             assert cell.execution_count is None and cell.outputs == []
-            if 'EVAL_PROFILE = "sample1_budget"' in cell.source:
+            if 'MODEL_KIND = "sft"' in cell.source:
                 exec(cell.source, context)
-    assert context["EVAL_PROFILE"] == "sample1_budget"
+    assert context["MODEL_KIND"] == "sft"
+    assert context["TEMPERATURE"] == 1.0
     assert context["MAX_THINKING_TOKENS"] == 18432
-    assert context["CONFIG"] == "configs/stage1_sft_deepseek_pro.yaml"
+    assert context["CONFIG"] == "configs/stage1_sft.yaml"
     assert "defines both options" not in "\n".join(c.source for c in nb.cells)

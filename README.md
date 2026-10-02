@@ -66,16 +66,20 @@ the HF `main` revision to a commit, verifies the expected full dataset digest an
 decontamination IDs, skips missing outputs, and drops full formatted sequences over 20,480 tokens.
 The supplied export retains 718 examples (six missing and 272 overlength exclusions).
 Checkpoints and logs use `sft_s1k_deepseek_pro`, preserving the earlier `sft_s1k` run.
-`evaluate_stage1_sft_temp1.ipynb` now selects `configs/stage1_sft_deepseek_pro.yaml` and the new
-run's epoch-5 checkpoint by default. The greedy evaluation notebook retains its original target.
+`evaluate_stage1_sft_temp1.ipynb` selects `configs/stage1_sft.yaml` and the **previous SFT run's**
+epoch-5 checkpoint to test whether budget forcing improves its results.
 The old `configs/stage1_sft.yaml`
 continues to reproduce the original R1-column run. Preparation reports record both exclusion counts.
 Push these code changes to GitHub before running the Colab training notebook.
 
-For **temperature 1.0 with one answer per problem**, use
+For **selectable base/SFT evaluation and temperature**, use
 [`evaluate_stage1_sft_temp1.ipynb`](notebooks/evaluate_stage1_sft_temp1.ipynb).
-Its default `sample1_budget` profile uses top-p 0.7, all five benchmarks (630 responses),
-and the Pro SFT run's epoch 5; earlier epochs remain optional. Set `MAX_THINKING_TOKENS` in
+Set `MODEL_KIND` to `sft` (default) or `base`, and set `TEMPERATURE` (default 1.0).
+SFT uses the previous `sft_s1k/epoch_5` checkpoint with budget forcing; base loads the pinned
+original EXAONE model with ordinary generation and needs no SFT files. One answer per problem
+is generated on all five benchmarks (630 responses). Temperature zero uses greedy decoding
+with top-p 1.0; other temperatures retain top-p 0.7. The profile is selected automatically.
+For SFT, earlier epochs remain optional. Set `MAX_THINKING_TOKENS` in
 the notebook (default **18,432**). Minimum reasoning stays zero, and the answer allowance is
 computed as **20,480 minus the thinking cap** (default **2,048**). At the reasoning cap it
 inserts `</think>` and `Final Answer:` and continues generation. Natural `</think>` starts the
@@ -83,15 +87,19 @@ answer phase earlier; natural EOS is respected, with no forced "Wait" extension.
 count against the answer allowance, so total continuation tokens remain at most 20,480.
 Both phases retain continuous batching, sampling settings, and the existing scoring code.
 
-The default result is `profiles/sample1_budget/thinking_18432_answer_2048/full/results/stage1/sft_s1k_deepseek_pro.json` under
+The default result is `profiles/sample1_budget/thinking_18432_answer_2048/temperature_1.0_top_p_0.7/full/results/stage1/sft_s1k.json` under
 the evaluation Drive root. Raw records log forced transitions and reasoning/answer/injected token
 counts. The token-length metric includes inserted tokens. Console logs include the run name and
-budget. Each thinking/answer split gets a separate results folder. Rerun checkpoint checks after
-editing the cap; that cell saves the resolved budget YAML to `TRAIN_ROOT/eval_configs/` and passes
-it to both smoke/full runs using `--budget_config`. The original `sample1_budget16k` CLI profile
+temperature and budget. Each setting gets a separate results folder. Rerun preparation after
+editing the model, temperature, or cap; that cell saves resolved sampling/budget YAML files to
+`TRAIN_ROOT/eval_configs/` and passes them to both smoke/full runs using `--sampling_config`
+and, only for SFT, `--budget_config`. Base results use
+`profiles/sample1/temperature_<temperature>_top_p_<top_p>/full/results/stage0/baseline_english.json`.
+The original `sample1_budget16k` CLI profile
 remains available with its fixed 16,384/4,096 split.
-Change CONFIG to `configs/stage1_sft.yaml` to re-evaluate the old R1 checkpoint with the same
-budget forcing. The `sample1` option disables budget forcing. Existing protocols bind evaluator
+CONFIG already selects `configs/stage1_sft.yaml` for the old R1 checkpoint.
+Base mode selects `sample1` without budget forcing; SFT always selects `sample1_budget`.
+Existing protocols bind evaluator
 code: use the original code to resume an old run, or a fresh BASELINE_ROOT for new plain-sample1
 results. Old responses are not imported into the new budget-forcing profile.
 
