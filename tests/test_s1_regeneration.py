@@ -13,7 +13,23 @@ import pytest
 import yaml
 
 from common.io import digest, read_jsonl
-from pipeline.regenerate_s1 import FatalAPIError, RegenerationRun, retry_after_seconds
+from pipeline.regenerate_s1 import (
+    FatalAPIError,
+    RegenerationRun,
+    answer_format_issues,
+    retry_after_seconds,
+)
+
+STRUCTURED_ANSWER = """## 1. Planning
+Use the supplied equation to isolate x.
+## 2. Evaluation
+Subtract 2 from both sides, then divide by 3.
+## 3. Reflection
+Substitute the result into the original equation.
+## 4. Exploration
+An equivalent verification multiplies the result by 3 and adds 2.
+Final answer: \\boxed{wrong-is-retained}
+"""
 
 
 @pytest.fixture
@@ -35,7 +51,7 @@ def config(source):
 
 
 def response(index="test", *, finish="stop", reasoning='Plan, calculate.\nCheck "α".',
-             answer=r"\boxed{wrong-is-retained}"):
+             answer=STRUCTURED_ANSWER):
     return httpx.Response(200, json={
         "id": f"response-{index}", "model": "returned-model-version",
         "system_fingerprint": "test", "usage": {"prompt_tokens": 2, "completion_tokens": 5,
@@ -86,7 +102,7 @@ async def test_smoke_then_full_concurrent_resumable_csv_and_source_preservation(
     for row, index in zip(data, run.smoke_indices, strict=True):
         assert row["question"] == source[index]["question"]
         assert row["deepseek_thinking_trajectory"] == source[index]["deepseek_thinking_trajectory"]
-        assert row[run.answer_column] == r"\boxed{wrong-is-retained}"
+        assert row[run.answer_column] == STRUCTURED_ANSWER
     # New runtime + torn final append: repair only the interrupted tail and reuse completed rows.
     with run.journal.open("ab") as f:
         f.write(b'{"index":')
@@ -143,6 +159,41 @@ async def test_incomplete_not_promoted_and_retried_on_resume(source, config, tmp
     await run.generate([0], "fake-key", progress=False,
                        transport=httpx.MockTransport(lambda request: response()))
     assert run.succeeded(0) and len(run.records) == 2
+
+
+@pytest.mark.parametrize("answer", [
+    r"The answer is \boxed{2}.",
+    STRUCTURED_ANSWER.replace("## 3. Reflection", "## 3. Something else"),
+    STRUCTURED_ANSWER.replace("Use the supplied equation to isolate x.", ""),
+    STRUCTURED_ANSWER.replace("An equivalent verification multiplies the result by 3 and adds 2.", ""),
+    STRUCTURED_ANSWER + "\n## 4. Exploration\nRepeated section.",
+    STRUCTURED_ANSWER.replace("## 1. Planning", "## 2. Evaluation", 1).replace(
+        "## 2. Evaluation\nSubtract", "## 1. Planning\nSubtract"),
+])
+def test_unstructured_empty_duplicate_or_reordered_final_sections_rejected(config, answer):
+    sections = config["output_format"]["required_sections"]
+    assert answer_format_issues(STRUCTURED_ANSWER, sections) == []
+    assert answer_format_issues(answer, sections)
+
+
+async def test_format_applies_to_final_content_not_raw_thinking(source, config, tmp_path):
+    run = RegenerationRun(source, config, tmp_path)
+    short_answer = r"\boxed{2}"
+    await run.generate([0], "fake-key", progress=False, transport=httpx.MockTransport(
+        lambda request: response(reasoning=STRUCTURED_ANSWER, answer=short_answer)))
+    assert not run.succeeded(0)
+    assert run.latest[0]["status"] == "invalid_format"
+    assert run.latest[0]["reasoning"] == STRUCTURED_ANSWER
+    assert run.latest[0]["answer"] == short_answer
+    partial = run.export(range(len(source)), "full")
+    assert read_jsonl(partial["path"])[0][run.answer_column] is None
+    assert read_jsonl(partial["status_path"])[0]["format_issues"]
+    await run.generate([0], "fake-key", progress=False, transport=httpx.MockTransport(
+        lambda request: response(reasoning="Unstructured raw thinking", answer=STRUCTURED_ANSWER)))
+    assert run.succeeded(0)
+    manifest = json.loads((run.root / "manifest.json").read_text())
+    assert manifest["intended_training_target_column"] == run.answer_column
+    assert manifest["raw_api_thinking_column"] == run.reasoning_column
 
 
 @pytest.mark.parametrize("status,error", [(401, FatalAPIError), (402, FatalAPIError),

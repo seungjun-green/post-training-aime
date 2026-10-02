@@ -8,8 +8,11 @@ Open [`regenerate_s1_deepseek.ipynb`](notebooks/regenerate_s1_deepseek.ipynb) on
 with `HF_TOKEN` (read access) and `DEEPSEEK_API_KEY` in Colab Secrets. The notebook bundles its
 code and config, so no Git push is required. It loads all 996 pinned rows from
 `Seungjun/dp_removed_s1K-1.1` and asks `deepseek-v4-pro` to solve each question independently
-with thinking enabled. The prompt encourages planning, evaluation, reflection, and exploration
-where useful, without a brevity instruction or correctness-based filtering.
+with thinking enabled. The final response must be a self-contained worked solution with four
+named sections: Planning, Evaluation (including the full derivation), Reflection, and Exploration,
+followed by the final answer. There is no brevity target or correctness-based filtering.
+The intended new SFT target is `deepseek-v4-pro_answer`; `deepseek-v4-pro_reasoning` retains the
+raw API thinking for inspection. The existing SFT loader is not changed by this notebook.
 
 - The separate **smoke cell** samples 20 rows with seed 42 and saves/downloads a five-column
   `comparison.csv`: question, original reasoning, original answer, new reasoning, new answer.
@@ -18,7 +21,8 @@ where useful, without a brevity instruction or correctness-based filtering.
   `deepseek-v4-pro_reasoning` and `deepseek-v4-pro_answer`.
 - Defaults are 16 concurrent requests, pacing, transient-error retries, and per-response journals
   on Drive under `LG-AIME-S1-DeepSeek/runs/<model>/<settings-id>/`. Rerunning resumes successful
-  rows and retries failures. Incomplete outputs are flagged separately; partial exports retain
+  rows and retries failures. Incomplete outputs and final responses with missing, empty, duplicate,
+  or out-of-order sections are flagged separately; partial exports retain
   all source rows with null generated fields for failures. Settings/code changes create a new run.
 
 Settings and the full prompt are in [`regenerate_s1_deepseek.yaml`](configs/regenerate_s1_deepseek.yaml).
@@ -27,6 +31,10 @@ No SFT length filter is applied to the source or regenerated data. This notebook
 SFT/evaluation code or publish to Hugging Face. Local tests exercise mock API calls, including
 the actual smoke/full notebook cells; live generation must be checked in the Colab smoke run.
 Rebuild with `python scripts/build_regeneration_notebook.py` after changing its bundled code.
+For the structured-final-response update, open the rebuilt notebook in a **fresh Colab runtime**
+and rerun the 20-row smoke test. A new output folder prevents reuse of the previous unstructured
+answers, while the seed keeps the same 20 questions. Raw failed responses remain in the journal.
+Section checks only enforce structure; use the smoke CSV to inspect the actual solution quality.
 
 ## Stage 1 SFT implementation
 

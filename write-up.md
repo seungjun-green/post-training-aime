@@ -51,12 +51,16 @@ retain their defaults; the new profile is also available through the shared base
 
 A separate [DeepSeek regeneration notebook](notebooks/regenerate_s1_deepseek.ipynb) now prepares
 alternative reasoning targets from the same 996 decontaminated s1K questions. It uses
-`deepseek-v4-pro` with thinking enabled, encourages Kimi k1.5's planning/evaluation/reflection/
-exploration practices, and imposes no prompt-level brevity target or answer-correctness filter.
+`deepseek-v4-pro` with thinking enabled. Following review of the first smoke CSV, the final response
+now explicitly requires Planning, Evaluation (the full worked derivation), Reflection, and
+Exploration sections followed by the final answer. It imposes no prompt-level brevity target or
+answer-correctness filter. `deepseek-v4-pro_answer` is the intended structured training target;
+`deepseek-v4-pro_reasoning` stores raw API thinking separately for inspection.
 The 20-example random smoke cell exports an old/new comparison CSV. The separate full-run cell
 preserves all source columns and adds `deepseek-v4-pro_reasoning` and `deepseek-v4-pro_answer`.
 Concurrent requests, retry journals, and resumable outputs are saved to Drive. Technical failures
-remain visible separately; partial outputs contain all rows with null generated fields for failures.
+and section-format failures remain visible separately; partial outputs contain all rows with null
+generated fields for failures. The revised prompt starts a fresh run on the same seeded smoke sample.
 This is data generation only: the existing SFT and evaluation implementations are unchanged.
 Local mocked-API tests passed; no live DeepSeek generation has been run during implementation.
 

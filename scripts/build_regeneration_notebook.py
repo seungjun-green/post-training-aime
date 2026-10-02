@@ -24,9 +24,19 @@ def cells():
         DeepSeek Pro solves the original **question only**; it is not given the old reasoning,
         answer, reference solution, or grade. Thinking is enabled. Its native `reasoning_content`
         becomes `deepseek-v4-pro_reasoning`; its final `content` becomes `deepseek-v4-pro_answer`.
-        The prompt encourages Kimi k1.5's **planning, evaluation, reflection, and exploration**
-        where useful, with **no short-reasoning instruction or target length**. These are reasoning
-        practices, not mandatory headings. There is **no answer-correctness filter**.
+        The final response must contain **four named sections: Planning, Evaluation, Reflection,
+        and Exploration**, followed by the final answer. Evaluation contains the full worked
+        derivation; the other sections explain the method and problem-specific checks. No length
+        target is requested, and mistakes or alternatives must not be fabricated.
+        There is **no answer-correctness filter**.
+
+        **The intended new training target is `deepseek-v4-pro_answer`: the complete structured
+        worked solution.** `deepseek-v4-pro_reasoning` retains raw API thinking for inspection.
+        This notebook does not change the existing SFT loader to use either new column.
+
+        **Updated format:** reopen this notebook in a fresh Colab runtime and rerun the smoke test.
+        The new prompt/code creates a fresh output folder, leaving previous results intact.
+        Seed 42 selects the same 20 questions, so you can compare the old and updated smoke runs.
 
         1. Run setup, settings, and source-loading cells.
         2. Run **Smoke test** for 20 reproducibly random examples and download the five-column CSV.
@@ -106,7 +116,11 @@ def cells():
 
         UTF-8 CSV preserves multiline text, quotation marks, and Unicode. Long reasoning can exceed
         spreadsheet apps' cell-display limits; the CSV itself retains the full text. Blank generated
-        cells mean generation is incomplete/failed/pending; inspect `smoke/status.jsonl` for details.
+        cells mean generation is incomplete/failed/pending or the final-response format is invalid;
+        inspect `smoke/status.jsonl` for details. We check the four headings in order and nonempty
+        sections. These structural checks do not assess correctness or quality: review whether the
+        answer column itself provides the full derivation and meaningful checks. Raw returned text,
+        including format failures, remains in `attempts.jsonl`. Rerun to retry unsuccessful rows.
         The old `deepseek_grade` is not a grade for the new answer, and no grading is run here.
         """),
         code("""
@@ -133,7 +147,8 @@ def cells():
 
         `full/dataset.jsonl` is written when every row is complete. Otherwise the export is called
         `full/dataset.partial.jsonl`, still containing every row, with null generated fields for
-        unsuccessful rows. `full/status.jsonl` lists failures by source index; `attempts.jsonl`
+        unsuccessful rows (including missing/empty/out-of-order sections). `full/status.jsonl`
+        lists failures by source index; `attempts.jsonl`
         retains raw returned text, including incomplete responses and retry usage. Rerun the cell
         to retry remaining rows. Authentication/balance/invalid-request errors stop the run and
         save partial results. Failed responses are not silently promoted into the training data.

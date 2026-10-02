@@ -4,6 +4,7 @@ import asyncio
 import copy
 import csv
 import random
+import re
 import time
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -56,11 +57,37 @@ class FatalAPIError(RuntimeError):
     """Authentication, billing or invalid request errors must stop paid work."""
 
 
+def answer_format_issues(answer, required_sections):
+    """Check visible section structure only, not correctness or reasoning quality."""
+    if not isinstance(answer, str) or not answer.strip():
+        return ["missing_final_response"]
+    headings = list(re.finditer(r"^##[ \t]+([^\r\n]+?)[ \t]*\r?$", answer, re.MULTILINE))
+    names = [m.group(1).strip() for m in headings]
+    issues = []
+    if names != required_sections:
+        issues.append("required_sections_missing_duplicate_or_out_of_order")
+    for i, heading in enumerate(headings):
+        end = headings[i + 1].start() if i + 1 < len(headings) else len(answer)
+        body = answer[heading.end():end].strip()
+        # A concluding answer by itself does not populate the Exploration section.
+        body = re.split(r"(?im)^\s*(?:\*\*)?Final answer:", body)[0].strip()
+        if not body:
+            issues.append("empty_section:" + names[i])
+    return issues
+
+
 class RegenerationRun:
     def __init__(self, rows, config, output_root):
         self.rows = copy.deepcopy(rows)
         self.config = copy.deepcopy(config)
         validate_source(self.rows, self.config)
+        sections = self.config["output_format"]["required_sections"]
+        if (not isinstance(sections, list) or len(sections) != 4
+                or any(not isinstance(s, str) or not s.strip() for s in sections)
+                or len(set(sections)) != 4):
+            raise ValueError("Expected four distinct final-response section titles")
+        if any("## " + title not in self.config["prompt"] for title in sections):
+            raise ValueError("Final-response section titles must be included in the prompt")
         api = self.config["api"]
         if api["model"] not in {"deepseek-v4-pro", "deepseek-flash"}:
             raise ValueError("Unsupported DeepSeek model")
@@ -94,6 +121,8 @@ class RegenerationRun:
             "identity": identity, "config": self.config, "implementation": implementation,
             "smoke_indices": self.smoke_indices,
             "new_columns": [self.reasoning_column, self.answer_column],
+            "intended_training_target_column": self.answer_column,
+            "raw_api_thinking_column": self.reasoning_column,
             "correctness_filter": False,
             "api_seed_supported": False,
         }
@@ -157,10 +186,14 @@ class RegenerationRun:
                     and isinstance(reasoning, str) and bool(reasoning.strip())
                     and isinstance(answer, str) and bool(answer.strip())
                 )
+                format_issues = answer_format_issues(
+                    answer, self.config["output_format"]["required_sections"])
                 record.update(
                     reasoning=reasoning, answer=answer, finish_reason=finish,
                     refusal=message.get("refusal"),
-                    status="complete" if complete else "incomplete",
+                    format_issues=format_issues,
+                    status=("invalid_format" if format_issues else "complete")
+                    if complete else "incomplete",
                 )
                 retryable = finish in {"insufficient_system_resource", "aborted"}
             except httpx.HTTPStatusError as exc:
@@ -265,6 +298,7 @@ class RegenerationRun:
             statuses.append({"source_index": index, "status": record.get("status", "pending"),
                              "finish_reason": record.get("finish_reason"),
                              "error": record.get("error"),
+                             "format_issues": record.get("format_issues", []),
                              "response_id": record.get("response_id"),
                              "response_model": record.get("response_model")})
         remaining = sum(not self.succeeded(i) for i in indices)

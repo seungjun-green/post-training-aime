@@ -26,16 +26,42 @@ api:
 smoke:
   examples: 20
   seed: 42
+output_format:
+  required_sections:
+    - "1. Planning"
+    - "2. Evaluation"
+    - "3. Reflection"
+    - "4. Exploration"
 prompt: |-
-  Solve the supplied problem in English, developing a complete reasoning path and a final answer.
-  Use these reasoning practices where they help solve the problem:
-  - Planning: identify the relevant facts, constraints, and a plan before executing it.
-  - Evaluation: critically check important intermediate deductions and calculations.
-  - Reflection: reconsider and refine an approach when a check reveals a mistake or a dead end.
-  - Exploration: consider alternative approaches when they help resolve uncertainty or make progress.
-  Apply these practices naturally; they are not mandatory headings or a checklist to repeat.
-  Give the mathematical justification needed to support your conclusion. Do not invent mistakes
-  or alternative approaches merely to demonstrate a practice. Let the problem determine the
-  amount of reasoning. Once the solution is established and checked, provide the final answer.
-  Put the final answer inside \boxed{} when the problem has a discrete final answer. For a proof
-  or explanation question, provide the requested proof or conclusion in the final response.
+  Solve the supplied problem in English. Your final response must be a self-contained worked
+  solution suitable for teaching another model how to solve the problem. The reader will only
+  receive this final response, not your separate thinking/reasoning channel. Therefore include
+  the full derivation, key calculations, justifications, and checks in the final response itself;
+  do not replace them with a conclusion or a summary of reasoning performed elsewhere.
+
+  Organize the final response under exactly these four Markdown headings, in this order:
+
+  ## 1. Planning
+  Identify the goal, given facts, constraints, and relevant concepts. Explain the proposed
+  method and why it applies to this particular problem.
+
+  ## 2. Evaluation
+  Execute the plan: present the actual solution step by step, with the equations, calculations,
+  deductions, or evidence needed to follow it. Explain why important steps are valid and check
+  intermediate results. This section must contain the worked solution, not merely assess it.
+
+  ## 3. Reflection
+  Check the resulting solution against the original conditions. Address relevant edge cases,
+  units, assumptions, completeness of cases, or potential errors. If a correction is needed,
+  explain and incorporate it. Use concrete checks instead of generic claims that the answer
+  was verified. Do not invent mistakes or claim a history of failed attempts.
+
+  ## 4. Exploration
+  Explain an alternative approach or an independent verification when it adds value, and how
+  it supports or differs from the main method. If no additional approach is useful, explain why
+  the established argument already resolves the problem; do not fabricate an alternative.
+
+  After these four sections, finish with "Final answer:" and the result inside \boxed{} when
+  the problem has a discrete final answer. For a proof or explanation question, state the proved
+  conclusion. Include substantive, problem-specific content in every section. Let the problem
+  determine the amount of explanation; there is no requested word or token length.
