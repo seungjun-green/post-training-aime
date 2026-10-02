@@ -27,6 +27,14 @@ from train.sft_data import (  # noqa: E402
 
 def load_config(path):
     config = yaml.safe_load(Path(path).read_text())
+    # Resolve a published Pro dataset once; all subsequent reads and the saved run
+    # manifest use this immutable commit, never the moving branch name.
+    if config["data"]["revision"] == "main":
+        from huggingface_hub import HfApi
+
+        config["data"]["revision"] = HfApi().dataset_info(
+            config["data"]["repo"], revision="main"
+        ).sha
     for field in ["stage", "run_name"]:
         if not re.fullmatch(r"[A-Za-z0-9_-]+", config[field]):
             raise ValueError(f"Unsafe {field}")

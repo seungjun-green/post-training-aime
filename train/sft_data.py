@@ -28,7 +28,7 @@ def load_rows(config, token=None, local_rows=None):
             spec["repo"], "provenance.json", repo_type="dataset",
             revision=spec["revision"], token=token,
         )).read_text())
-        if provenance["retained_originals_digest"] != spec["content_digest"]:
+        if provenance["retained_originals_digest"] != spec.get("provenance_content_digest", spec["content_digest"]):
             raise ValueError("Published provenance does not match the configured s1K content")
         ids = provenance["retained_preparation_ids"]
     if len(rows) != spec["expected_rows"] or digest(rows) != spec["content_digest"]:
@@ -38,16 +38,21 @@ def load_rows(config, token=None, local_rows=None):
     return rows, ids
 
 
-def format_example(tokenizer, row):
-    for column in ["question", "deepseek_thinking_trajectory", "deepseek_attempt"]:
+DEFAULT_COLUMNS = {"question": "question", "reasoning": "deepseek_thinking_trajectory",
+                   "answer": "deepseek_attempt"}
+
+
+def format_example(tokenizer, row, columns=None):
+    columns = columns or DEFAULT_COLUMNS
+    for column in columns.values():
         if not isinstance(row[column], str) or not row[column].strip():
             raise ValueError(f"Missing training text: {column}")
     assistant = (
-        "<think>\n" + row["deepseek_thinking_trajectory"]
-        + "\n</think>\n\n" + row["deepseek_attempt"]
+        "<think>\n" + row[columns["reasoning"]]
+        + "\n</think>\n\n" + row[columns["answer"]]
     )
-    conversation = messages(row["question"]) + [{"role": "assistant", "content": assistant}]
-    prompt = render_prompt(tokenizer, row["question"])
+    conversation = messages(row[columns["question"]]) + [{"role": "assistant", "content": assistant}]
+    prompt = render_prompt(tokenizer, row[columns["question"]])
     text = tokenizer.apply_chat_template(conversation, tokenize=False, add_generation_prompt=False)
     supervised_end = prompt + assistant + tokenizer.eos_token
     # The native EXAONE template appends a newline after EOT. It stays in the input,
@@ -80,9 +85,16 @@ def percentile(values, fraction):
 
 def prepare_examples(tokenizer, rows, ids, config):
     examples, lengths, kept_ids, dropped = [], [], [], []
+    columns = config["data"].get("columns", DEFAULT_COLUMNS)
     preview = None
     for row, identifier in zip(rows, ids, strict=True):
-        example, text = format_example(tokenizer, row)
+        if config["data"].get("drop_missing_outputs", False):
+            missing = [columns[key] for key in ["reasoning", "answer"]
+                       if not isinstance(row.get(columns[key]), str) or not row[columns[key]].strip()]
+            if missing:
+                dropped.append({"id": identifier, "reason": "missing_output", "columns": missing})
+                continue
+        example, text = format_example(tokenizer, row, columns)
         length = len(example["input_ids"])
         if length > config["max_seq_length"]:
             dropped.append({"id": identifier, "tokens": length})
@@ -102,6 +114,9 @@ def prepare_examples(tokenizer, rows, ids, config):
         "grade_counts": dict(grades),
         "incorrect_grade_rows": sum(grades[v] for v in config["data"]["incorrect_grade_values"]),
         "grade_filter_applied": False, "truncation_applied": False,
+        "training_columns": columns,
+        "dropped_missing_outputs": sum(row.get("reason") == "missing_output" for row in dropped),
+        "dropped_overlength": sum("tokens" in row for row in dropped),
         "max_seq_length": config["max_seq_length"],
         "token_lengths": {
             "min": min(lengths), "median": percentile(lengths, 0.5),

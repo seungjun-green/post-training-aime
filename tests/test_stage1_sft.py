@@ -95,6 +95,60 @@ def test_local_data_requires_exact_original_content_and_ids(tmp_path):
         load_rows(cfg, local_rows=path)
 
 
+def test_pro_columns_missing_outputs_and_full_sequence_limit():
+    tokenizer = CharacterTokenizer()
+    cfg = config()
+    columns = {"question": "question", "reasoning": "deepseek-v4-pro_reasoning",
+               "answer": "deepseek-v4-pro_answer"}
+    cfg["data"].update(columns=columns, drop_missing_outputs=True)
+    first = {**row(), columns["reasoning"]: "PRO thinking", columns["answer"]: "PRO answer"}
+    example, text = format_example(tokenizer, first, columns)
+    cfg["max_seq_length"] = len(example["input_ids"])
+    missing = {**first, columns["answer"]: None}
+    longer = {**first, columns["answer"]: "PRO answer!"}
+    examples, report, _ = prepare_examples(
+        tokenizer, [first, missing, longer], ["keep", "missing", "long"], cfg)
+    supervised = tokenizer.decode([x for x in examples[0]["labels"] if x != -100])
+    assert supervised == "<think>\nPRO thinking\n</think>\n\nPRO answer~"
+    assert "The answer is" not in text
+    assert report["kept_ids"] == ["keep"]
+    assert report["dropped_missing_outputs"] == report["dropped_overlength"] == 1
+    assert len(examples[0]["input_ids"]) == cfg["max_seq_length"]
+
+
+def test_pro_config_preserves_hyperparameters_and_pins_head(monkeypatch):
+    from types import SimpleNamespace
+    from huggingface_hub import HfApi
+
+    monkeypatch.setattr(HfApi, "dataset_info", lambda self, repo, revision:
+                        SimpleNamespace(sha="a" * 40))
+    old = config()
+    pro = load_config(ROOT / "configs/stage1_sft_deepseek_pro.yaml")
+    assert pro["data"]["revision"] == "a" * 40
+    assert pro["run_name"] != old["run_name"]
+    for field in ["training", "model", "attention", "hardware", "max_seq_length"]:
+        assert pro[field] == old[field]
+
+
+def test_pro_load_rows_checks_new_digest_and_original_provenance(tmp_path, monkeypatch):
+    import datasets
+    import huggingface_hub
+
+    cfg = config()
+    rows = [{**row(), "deepseek-v4-pro_reasoning": "new", "deepseek-v4-pro_answer": "answer"}]
+    cfg["data"].update(expected_rows=1, content_digest=digest(rows),
+                       provenance_content_digest=digest([row()]), ids_digest=digest(["id"]))
+    provenance = tmp_path / "provenance.json"
+    provenance.write_text(json.dumps({"retained_originals_digest": digest([row()]),
+                                     "retained_preparation_ids": ["id"]}))
+    monkeypatch.setattr(datasets, "load_dataset", lambda *args, **kwargs: rows)
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", lambda *args, **kwargs: str(provenance))
+    assert load_rows(cfg) == (rows, ["id"])
+    rows[0]["deepseek-v4-pro_reasoning"] = "unexpected changed data"
+    with pytest.raises(ValueError, match="Training rows differ"):
+        load_rows(cfg)
+
+
 def test_collator_preserves_eot_when_pad_equals_eos():
     pytest.importorskip("torch")
     collator = AssistantCollator(9)

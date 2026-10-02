@@ -10,18 +10,24 @@ def cells():
         Use the **RTX PRO 6000 Blackwell 96GB** runtime and enable the `HF_TOKEN` secret.
         Push the Stage 1 implementation to your GitHub repository before running setup.
         This notebook uses a separate training environment and preserves the frozen evaluation
-        environment. All training settings are in the committed `configs/stage1_sft.yaml`.
+        environment. All training settings are in `configs/stage1_sft_deepseek_pro.yaml`.
+        This starts from the original EXAONE base model and trains on the new Pro thinking
+        **plus** answer. Hyperparameters are unchanged from the original five-epoch SFT run.
+        The published HF dataset must contain the two Pro columns before you run preparation.
+        Its current revision is resolved to an immutable commit and recorded in the run manifest.
+        Checkpoints use the separate run name `sft_s1k_deepseek_pro`.
         This notebook performs SFT and saves all five epoch checkpoints. It never runs evaluation.
         A default Run all prepares and inspects data only; enable `RUN_TRAINING` to train.
         Keep enough Drive space for five full model/optimizer checkpoints (allow at least 100GB).
-        After training, open `evaluate_stage1_sft.ipynb` to evaluate every saved epoch.
+        For later evaluation, set the evaluation notebook's CONFIG to
+        `configs/stage1_sft_deepseek_pro.yaml` to select these new checkpoints.
         """),
         code("""
         REPO_URL = "https://github.com/seungjun-green/post-training-aime.git"
         CODE_ROOT = "/content/lg-aime-stage1"
         TRAIN_ROOT = "/content/drive/MyDrive/LG-AIME-Stage1"
         TRAIN_ENV = "/content/lg-sft-env"
-        CONFIG = "configs/stage1_sft.yaml"
+        CONFIG = "configs/stage1_sft_deepseek_pro.yaml"
         """),
         code("""
         import os, subprocess, sys
@@ -39,6 +45,13 @@ def cells():
             raise ValueError("Use a main checkout")
         subprocess.check_call(["git", "-C", CODE_ROOT, "pull", "--ff-only", "origin", "main"])
         print("Code commit:", git("rev-parse", "HEAD"))
+        if not (Path(CODE_ROOT) / CONFIG).is_file():
+            raise FileNotFoundError(
+                f"The GitHub checkout does not contain {CONFIG}. Commit and push the Pro SFT "
+                "update (including configs/stage1_sft_deepseek_pro.yaml, train/sft_data.py, "
+                "and train/stage1_sft.py) to main, then rerun this setup cell. "
+                "Uploading the notebook alone does not update the cloned training code."
+            )
         subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "uv==0.11.22"])
         subprocess.check_call([sys.executable, "scripts/setup_stage1_runtime.py", "--venv", TRAIN_ENV], cwd=CODE_ROOT)
         sys.path.insert(0, CODE_ROOT)
@@ -48,10 +61,13 @@ def cells():
         """),
         markdown("""
         ## Data and loss-mask inspection
-        This tokenizes all 996 original published rows without loading model weights. Review the
-        printed full text and masked text. The report records overlength exclusions and the count
-        of incorrect grades; grades never filter training. Inputs longer than 20,480 tokens are
-        dropped, never truncated. Training repeats these checks before the first optimizer step.
+        This reads all 996 published rows without loading model weights. It skips missing Pro
+        outputs and tokenizes the new reasoning plus answer with the existing English prompt
+        and native chat template. Review the printed full text and masked text. Full sequences
+        longer than 20,480 tokens are dropped, never truncated. For this uploaded export, expect
+        718 retained rows, six missing-output exclusions, and 272 overlength exclusions.
+        Old grades describe the old answers and never filter training. Training repeats these
+        checks before the first optimizer step.
         """),
         code("""
         run_logged(TRAIN_COMMAND + ["--prepare-only"], cwd=CODE_ROOT,

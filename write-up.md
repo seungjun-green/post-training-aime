@@ -64,6 +64,17 @@ generated fields for failures. The revised prompt starts a fresh run on the same
 This is data generation only: the existing SFT and evaluation implementations are unchanged.
 Local mocked-API tests passed; no live DeepSeek generation has been run during implementation.
 
+The subsequent full export used the original generation approach, and the selected training target
+is now **both Pro thinking and answer**, preserving the existing `<think>…</think>` format.
+`train_stage1_sft.ipynb` defaults to `configs/stage1_sft_deepseek_pro.yaml` and starts from the
+original EXAONE base checkpoint with the same five-epoch hyperparameters. The uploaded export
+contains 990 complete pairs and six missing pairs. After excluding missing pairs and full native
+training sequences longer than 20,480 tokens, 718 examples remain (272 overlength exclusions).
+This gives 45 optimizer steps per epoch and 225 across five epochs. New checkpoints/logs use
+`sft_s1k_deepseek_pro`; the old config and outputs remain separate. The dataset's current HF
+revision is resolved to an immutable commit and its exact content is checked and recorded.
+Evaluation code is unchanged; select the new config in an evaluation notebook to target this run.
+
 The active notebooks are:
 
 1. [Prepare English datasets](notebooks/prepare_english_datasets.ipynb): CPU decontamination and Hugging Face upload.

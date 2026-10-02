@@ -36,7 +36,40 @@ and rerun the 20-row smoke test. A new output folder prevents reuse of the previ
 answers, while the seed keeps the same 20 questions. Raw failed responses remain in the journal.
 Section checks only enforce structure; use the smoke CSV to inspect the actual solution quality.
 
+## Upload existing DeepSeek results to Hugging Face
+
+Open [`upload_s1_deepseek_to_huggingface.ipynb`](notebooks/upload_s1_deepseek_to_huggingface.ipynb)
+on **Colab CPU**, add a write-capable `HF_TOKEN` in Secrets, and run cells in order.
+The self-contained notebook reads the existing Drive export and `status.jsonl`, verifies them
+against the pinned source and current HF dataset, and updates `Seungjun/dp_removed_s1K-1.1`
+with `deepseek-v4-pro_reasoning` and `deepseek-v4-pro_answer`. Both columns are retained for
+later combined thinking-plus-answer training. All 996 source rows and original columns stay
+intact; unsuccessful rows keep null Pro fields. No length or correctness filter is applied.
+
+The upload cell publishes the dataset and a ZIP containing both original JSONL files and a
+provenance manifest. The verification cell reloads the uploaded revision, compares all values,
+checks the ZIP checksum, and saves a receipt under `LG-AIME-S1-DeepSeek/hf_uploads/` on Drive.
+The existing repository visibility is retained. Settings and default input paths are in
+[`publish_s1_regeneration.yaml`](configs/publish_s1_regeneration.yaml); change the paths in the
+notebook if needed. Identical reruns and filling missing outputs are supported; replacing
+existing non-null Pro text is rejected. Existing training configs still pin the old source
+revision and columns. This upload does not switch them to Pro data.
+
+Rebuild with `python scripts/build_s1_upload_notebook.py`.
+
 ## Stage 1 SFT implementation
+
+`train_stage1_sft.ipynb` now defaults to `configs/stage1_sft_deepseek_pro.yaml`: the original
+EXAONE base model trains on `deepseek-v4-pro_reasoning` plus `deepseek-v4-pro_answer`, with
+all previous training hyperparameters unchanged. Publish the Pro export first. The loader resolves
+the HF `main` revision to a commit, verifies the expected full dataset digest and original
+decontamination IDs, skips missing outputs, and drops full formatted sequences over 20,480 tokens.
+The supplied export retains 718 examples (six missing and 272 overlength exclusions).
+Checkpoints and logs use `sft_s1k_deepseek_pro`, preserving the earlier `sft_s1k` run.
+Set the evaluation notebook's `CONFIG` to `configs/stage1_sft_deepseek_pro.yaml` when evaluating
+these checkpoints; evaluation defaults remain unchanged. The old `configs/stage1_sft.yaml`
+continues to reproduce the original R1-column run. Preparation reports record both exclusion counts.
+Push these code changes to GitHub before running the Colab training notebook.
 
 For **temperature 1.0 with one answer per problem**, use
 [`evaluate_stage1_sft_temp1.ipynb`](notebooks/evaluate_stage1_sft_temp1.ipynb).
