@@ -465,8 +465,87 @@ def budget_eval_cells():
     ]
 
 
+def pro_eval_cells():
+    """Reuse the batched evaluation workflow for the Pro-trained epoch-five model."""
+    notebook_cells = budget_eval_cells()
+    notebook_cells[0] = markdown("""
+        # Evaluate DeepSeek Pro SFT — epoch 5
+        Evaluates `sft_s1k_deepseek_pro/epoch_5` on **AIME 2024, AIME 2025, AIME 2026,
+        AMC 2023, and MATH-500**: one answer per problem, 630 problems in total.
+        Uses the existing English generation/scoring code and continuous GPU batching.
+        Defaults match the latest old-SFT comparison: **temperature 0**, budget forcing at
+        **16,384 thinking tokens**, and **4,096 answer tokens** including the injected cue.
+        Temperature and thinking cap are editable below. No minimum-thinking extension is used.
+
+        Set `TRAIN_ROOT` to the exact Drive folder printed by your Pro training notebook,
+        including its timestamp if you started a fresh run. Leave it blank to discover a
+        single completed Pro epoch-5 checkpoint; multiple matches require an explicit choice.
+        Results, raw generations, settings and console logs are saved within that training
+        folder. A completed baseline evaluation is not required.
+
+        Use the **RTX PRO 6000 Blackwell 96GB** runtime and the `HF_TOKEN` Colab secret.
+        Push the project implementation to GitHub main before setup. Run settings, setup,
+        checkpoint selection and preparation first. Smoke and full evaluation have separate
+        disabled switches; enable them explicitly. This notebook never trains a model.
+        Rerun checkpoint selection and preparation after changing settings.
+        """)
+    notebook_cells[1] = code("""
+        # @title Settings
+        REPO_URL = "https://github.com/seungjun-green/post-training-aime.git"
+        CODE_ROOT = "/content/lg-aime-stage1-eval"
+        TRAIN_ROOT = "" # @param {type:"string"}
+        DRIVE_ROOT = "/content/drive/MyDrive"
+        EVAL_ENV = "/content/lg-eval-env"
+        CONFIG = "configs/stage1_sft_deepseek_pro.yaml"
+        MODEL_KIND = "sft"
+        TEMPERATURE = 0.0 # @param {type:"number"}
+        MAX_THINKING_TOKENS = 16384 # @param {type:"integer"}
+        """)
+    notebook_cells[3] = markdown("""
+        ## Prepare the Pro checkpoint and evaluation settings
+        Epoch 5 is selected by default. Confirm the printed checkpoint path points to the
+        Pro training run you want. Outputs are isolated within that training folder under
+        `evaluation_deepseek_pro/profiles/`, with separate paths for temperature, budget,
+        smoke and full evaluation. Completed problems can be resumed with unchanged settings.
+        """)
+    notebook_cells[5] = markdown("""
+        ## Optional smoke test — five problems
+        Evaluate one problem per benchmark using the Pro epoch-5 checkpoint.
+        Smoke results are saved separately from the full evaluation.
+        """)
+    notebook_cells.insert(3, code("""
+        # @title Locate the completed Pro epoch-5 checkpoint
+        checkpoint_relative = Path("checkpoints/stage1/sft_s1k_deepseek_pro/epoch_5/stage1_checkpoint.json")
+        if not TRAIN_ROOT.strip():
+            candidates = sorted(
+                root for root in Path(DRIVE_ROOT).glob("LG-AIME-Stage1*")
+                if (root / checkpoint_relative).is_file()
+            )
+            if len(candidates) != 1:
+                print("Completed Pro training folders:")
+                for root in candidates:
+                    print(root)
+                raise ValueError(
+                    "Set TRAIN_ROOT in Settings to your Pro training folder, then rerun this cell. "
+                    "No unique completed Pro epoch-5 checkpoint was found."
+                )
+            TRAIN_ROOT = str(candidates[0])
+        marker_path = Path(TRAIN_ROOT) / checkpoint_relative
+        if not marker_path.is_file():
+            raise FileNotFoundError(f"Pro epoch 5 is missing: {marker_path}. Check the training output folder.")
+        marker = json.loads(marker_path.read_text())
+        if marker["epoch"] != 5:
+            raise ValueError(f"Not an epoch-5 checkpoint: {marker_path}")
+        BASELINE_ROOT = str(Path(TRAIN_ROOT) / "evaluation_deepseek_pro")
+        print("Pro epoch-5 checkpoint:", marker_path.parent)
+        print("Evaluation output folder:", BASELINE_ROOT)
+        """))
+    return notebook_cells
+
+
 if __name__ == "__main__":
     write_notebook("train_stage1_sft.ipynb", cells())
     write_notebook("train_stage1_sft_deepseek_pro.ipynb", pro_train_cells())
     write_notebook("evaluate_stage1_sft.ipynb", eval_cells())
     write_notebook("evaluate_stage1_sft_temp1.ipynb", budget_eval_cells())
+    write_notebook("evaluate_stage1_sft_deepseek_pro.ipynb", pro_eval_cells())

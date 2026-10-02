@@ -66,6 +66,20 @@ Local mocked-API tests passed; no live DeepSeek generation has been run during i
 
 The subsequent full export used the original generation approach, and the selected training target
 is now **both Pro thinking and answer**, preserving the existing `<think>…</think>` format.
+The separate Llama experiment uses `notebooks/train_stage1_llama31_lora.ipynb` and
+`configs/stage1_sft_llama31_lora.yaml`: Llama 3.1 8B Instruct at revision
+`0e9e39f249a16976918f6564b8830bc894c89659`, with the original DeepSeek reasoning/answer
+columns. LoRA settings are rank 32, alpha 64, dropout 0.05, all seven attention/MLP projections,
+LR 5e-5, five epochs, microbatch 1 and accumulation 16. BF16 base weights remain frozen;
+only adapter matrices train. The native Llama template supervises reasoning, answer and EOT,
+and excludes prompt/padding. Its template trims trailing answer whitespace. Llama tokenization
+recomputes which complete sequences fit 20,480 tokens. No correctness filter is applied.
+Preparation and longest-example GPU smoke training precede the separate full-run cell.
+Adapters and optimizer state are saved each epoch under `sft_llama31_8b_lora_s1k`, alongside
+loss logs, pinned config, parameter report and runtime manifest. This is a new experiment,
+not a modification of prior EXAONE results. CPU adapter-update/reload/resume checks passed;
+gated-tokenizer and GPU validation remain Colab checks. No Llama benchmark result is available yet.
+
 `train_stage1_sft.ipynb` defaults to `configs/stage1_sft_deepseek_pro.yaml` and starts from the
 original EXAONE base checkpoint with the same five-epoch hyperparameters. The uploaded export
 contains 990 complete pairs and six missing pairs. After excluding missing pairs and full native

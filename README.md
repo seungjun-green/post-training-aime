@@ -59,11 +59,50 @@ Rebuild with `python scripts/build_s1_upload_notebook.py`.
 
 ## Stage 1 SFT implementation
 
+### Llama 3.1 8B LoRA experiment
+
+Open [`train_stage1_llama31_lora.ipynb`](notebooks/train_stage1_llama31_lora.ipynb) for the
+separate Llama experiment. It starts from pinned `meta-llama/Llama-3.1-8B-Instruct` and uses
+the original `deepseek_thinking_trajectory` plus `deepseek_attempt` columns at the original
+decontaminated dataset revision. Your Colab `HF_TOKEN` needs access to the gated Llama model.
+Push the new implementation to GitHub main before running notebook setup.
+
+[`configs/stage1_sft_llama31_lora.yaml`](configs/stage1_sft_llama31_lora.yaml) specifies rank 32,
+alpha 64, dropout 0.05, all attention/MLP projections, LR 5e-5, five epochs, batch 1,
+accumulation 16, cosine decay, 5% warmup and seed 42. Frozen base weights use BF16 without
+quantization. Native PyTorch SDPA FlashAttention and nonreentrant gradient checkpointing
+limit memory use. Only the LoRA matrices are trainable. The tokenizer uses its native EOT
+and existing padding tokens; no vocabulary expansion is performed. Full formatted sequences
+over 20,480 tokens are dropped using Llama tokenization, so the retained count is recomputed.
+
+The notebook separates preparation, a GPU smoke run on the longest retained example, and full
+training. Each smoke uses a separate timestamped directory and cannot alter full-run weights.
+The default Drive root is `LG-AIME-Llama31-LoRA`. The full run saves
+`checkpoints/stage1/sft_llama31_8b_lora_s1k/epoch_1/` through `epoch_5/` and per-step metrics in
+`logs/stage1/sft_llama31_8b_lora_s1k/steps.jsonl`. Checkpoints contain **adapters**, tokenizer,
+optimizer/scheduler/RNG state, and the pinned base revision. Evaluation must load the pinned
+Llama base with its adapter or merge them; these are not standalone EXAONE checkpoints.
+No evaluation runs in this notebook. Existing EXAONE training and evaluation code is unchanged.
+
+Rebuild with `python scripts/build_llama_sft_notebook.py`. Local CPU tests cover loss masks,
+strict filtering, frozen base weights, adapter reload equivalence and epoch-checkpoint resume.
+The actual gated tokenizer and 8B/20K-token GPU memory check run in Colab; they have not been
+verified locally.
+
+### EXAONE runs
+
 For an explicitly named Pro training launcher, open
 [`train_stage1_sft_deepseek_pro.ipynb`](notebooks/train_stage1_sft_deepseek_pro.ipynb).
 It shares the existing training workflow: Pro reasoning plus answer, five epochs from the
 original base model, full-sequence filtering at 20,480 tokens, and Drive checkpoints/loss logs.
 Run setup and preparation, then enable `RUN_TRAINING` in the last cell. It does not run evaluation.
+
+Evaluate that run with [`evaluate_stage1_sft_deepseek_pro.ipynb`](notebooks/evaluate_stage1_sft_deepseek_pro.ipynb).
+Set `TRAIN_ROOT` to its actual Drive folder (including a fresh-run timestamp, if used).
+Blank selects a single discovered completed Pro epoch-5 run; multiple matches require selection.
+Defaults are temperature 0, one answer per problem, 16,384 thinking tokens and 4,096 answer tokens,
+with continuous batching across all five benchmarks. Smoke and full runs are separate cells.
+Results live under that training folder's `evaluation_deepseek_pro/` directory.
 
 `train_stage1_sft.ipynb` now defaults to `configs/stage1_sft_deepseek_pro.yaml`: the original
 EXAONE base model trains on `deepseek-v4-pro_reasoning` plus `deepseek-v4-pro_answer`, with

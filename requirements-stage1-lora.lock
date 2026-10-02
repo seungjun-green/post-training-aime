@@ -1,0 +1,3 @@
+# Extend the existing pinned training stack without changing the EXAONE environment.
+-r requirements-stage1.lock
+peft==0.17.1
