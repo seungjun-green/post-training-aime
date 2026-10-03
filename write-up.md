@@ -171,3 +171,22 @@ a fixed template date and explicit native stop tokens, with separate preparation
 full-run cells. Outputs are isolated in `LG-AIME-DAPO-Llama32-3B` on Drive. Local tests exercise
 a small tied-embedding Llama model, clipping, termination accounting and exact resume;
 full-size GPU smoke and benchmark results are pending. No evaluation protocol was changed.
+
+### Disjoint minibatches and fresh 300-update runs
+
+Following clarification of the paper's training schedule, the current EXAONE and Llama DAPO
+notebooks use `dapo_minibatch.yaml` and `dapo_llama32_3b_minibatch.yaml`. Each rollout yields
+128 retained responses, shuffled into two disjoint minibatches of 64; each answer is used
+once (`num_iterations=1`). Original log-probabilities and group advantages stay fixed across
+the two optimizer steps. The token-normalized loss denominator is recomputed for each
+minibatch after shuffling. The second update can therefore use the clipped objective without
+repeating responses. This replaces the prior two-pass notebook default; the old configs remain
+unchanged for reproducibility. It does not establish clipping as the cause of earlier results.
+
+The user chose to start EXAONE from base again, rather than continue checkpoint 140. Total
+training is 300 optimizer steps (150 fresh rollouts), with checkpoints every 20 steps. The
+EXAONE and Llama Drive roots end in `DAPO-MiniBatch300` and `Llama32-3B-MiniBatch300`.
+This is a smaller-scale adaptation of the paper's minibatch schedule; batch sizes, updates per
+rollout and warmup units are not an exact reproduction. CPU tests compare actual gradients
+against an independent clipped objective, check disjoint response use and fixed old-policy
+probabilities, and verify uninterrupted versus resumed weights. GPU validation remains Colab smoke.

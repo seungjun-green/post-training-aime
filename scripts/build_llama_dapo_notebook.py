@@ -11,10 +11,11 @@ def cells():
         Full-parameter training on one **RTX PRO 6000 Blackwell 96GB**. This notebook
         runs DAPO training only. It does not load EXAONE, an SFT checkpoint or a LoRA adapter.
 
-        Settings in `configs/dapo_llama32_3b.yaml`:
+        Settings in `configs/dapo_llama32_3b_minibatch.yaml`:
         - G=8, 16 retained mixed-correctness questions (128 responses) per rollout.
-        - **Two optimizer updates per rollout**, with fixed old-policy probabilities and advantages.
-        - 100 optimizer updates = 50 fresh rollout batches; checkpoints every 20 updates.
+        - **Two disjoint 64-response minibatches per rollout**, with fixed old-policy probabilities
+          and advantages. Each response is used once (`num_iterations=1`).
+        - 300 optimizer updates = 150 fresh rollout batches; checkpoints every 20 updates.
         - LR 1e-6, 20-update warmup then constant LR; temperature/top-p 1; clip 0.20/0.28.
         - Rule-based +1/-1 reward, group normalization, token-level DAPO loss, no KL.
         - Maximum response 20,480 tokens; soft length penalty begins at 16,384. No budget forcing.
@@ -26,17 +27,17 @@ def cells():
         vLLM generates up to 16 concurrent responses and sleeps during optimization.
 
         Preparation, GPU smoke and full training are separate cells. Local CPU tests do not
-        establish GPU memory fit: run smoke on the target GPU first. Five full resumable
-        checkpoints plus smoke need roughly **250 GB** of Drive space. All settings below
+        establish GPU memory fit: run smoke on the target GPU first. Fifteen full resumable
+        checkpoints plus smoke need roughly **650 GB** of Drive space. All settings below
         are plain Python variables. This is a new experiment; EXAONE continuation is separate.
         """),
         code("""
-        OUTPUT_ROOT = "/content/drive/MyDrive/LG-AIME-DAPO-Llama32-3B"
+        OUTPUT_ROOT = "/content/drive/MyDrive/LG-AIME-DAPO-Llama32-3B-MiniBatch300"
         REPO_URL = "https://github.com/seungjun-green/post-training-aime.git"
         CODE_ROOT = "/content/lg-aime-dapo-llama32"
         RL_ENV = "/content/lg-dapo-env"
         WORK_DIR = "/content/llama32-dapo-work"
-        CONFIG = "configs/dapo_llama32_3b.yaml"
+        CONFIG = "configs/dapo_llama32_3b_minibatch.yaml"
         """),
         markdown("""
         ## Setup
@@ -77,7 +78,7 @@ def cells():
         Full checkpoints and logs are isolated from all previous EXAONE and Llama SFT runs.
         """),
         code("""
-        from train.dapo_data import load_config
+        from train.dapo_data import load_config, batch_schedule
         cfg = load_config(Path(CODE_ROOT) / CONFIG)
         if cfg["model"]["repo"] != "meta-llama/Llama-3.2-3B-Instruct":
             raise ValueError("Use the Llama 3.2 3B Instruct config")
@@ -87,7 +88,7 @@ def cells():
         TRAIN_COMMAND = [str(Path(RL_ENV) / "bin/python"), "train/run_dapo.py", "--config", CONFIG,
                          "--model-kind", "base", "--output-root", OUTPUT_ROOT, "--work-dir", WORK_DIR]
         print("Starting model:", cfg["model"]["repo"])
-        print("Updates per rollout:", cfg["algorithm"]["num_iterations"])
+        print("Updates per rollout:", batch_schedule(cfg)["updates_per_rollout"])
         print("Checkpoints:", checkpoint_root)
         print("Training logs:", run_logs)
         """),
@@ -102,10 +103,12 @@ def cells():
         """),
         markdown("""
         ## GPU smoke — two updates on one rollout
-        Uses G=8, two retained mixed groups, the full token cap, and no warmup.
-        Verifies generation, rewards, reuse, optimizer updates and checkpoint saving on your GPU.
+        Uses G=8, two retained mixed groups (16 responses), two disjoint 8-response minibatches,
+        the full token cap, and no warmup.
+        Verifies generation, rewards, minibatch updates and checkpoint saving on your GPU.
         Smoke has its own timestamped directory; its weights are never used for the full run.
-        The second log row must have policy_iteration=2, reused_rollout=true and new_generated_tokens=0.
+        The rows must have minibatch_index 1 then 2, with policy_iteration=1 in both.
+        The second row has cached_rollout=true, reused_rollout=false and new_generated_tokens=0.
         Clipping can still be zero if the update is small. A nonzero clip fraction is not required.
         """),
         code("""
@@ -119,21 +122,24 @@ def cells():
                        log_path=smoke_root / "smoke_console.log", compact_progress=True)
             smoke_log = smoke_root / "logs" / (RUN_NAME + "_smoke") / "steps.jsonl"
             records = [json.loads(line) for line in smoke_log.read_text().splitlines()]
-            assert [r["policy_iteration"] for r in records] == [1, 2]
-            assert records[-1]["reused_rollout"] and records[-1]["new_generated_tokens"] == 0
+            assert [r["minibatch_index"] for r in records] == [1, 2]
+            assert [r["policy_iteration"] for r in records] == [1, 1]
+            assert not any(r["reused_rollout"] for r in records)
+            assert records[-1]["cached_rollout"] and records[-1]["new_generated_tokens"] == 0
             print("Two-update smoke completed. Logs:", smoke_log)
         else:
             print("Set RUN_SMOKE = True to run the separate GPU smoke.")
         """),
         markdown("""
-        ## Full training — 100 optimizer updates
-        Run after preparation and smoke. Saves checkpoints 20/40/60/80/100, with full model,
+        ## Full training — 300 optimizer updates
+        Run after preparation and smoke. Saves checkpoints 20/40/.../300, with full model,
         tokenizer, optimizer, scheduler and RNG state. Dynamic sampling may generate extra
-        candidate groups to find 16 mixed groups. Each retained batch is used for two updates.
+        candidate groups to find 16 mixed groups. Each retained batch is split into two disjoint minibatches;
+        each answer is used once and loss is normalized by the active tokens of its minibatch.
 
         After interruption, set RESUME_CHECKPOINT to this run's latest complete checkpoint.
-        Keep code/config/runtime unchanged. Saving only at complete reuse cycles makes resume
-        start with a fresh rollout. max_steps and save_steps must be multiples of num_iterations.
+        Keep code/config/runtime unchanged. Saving only at complete rollout cycles makes resume
+        start with a fresh rollout. max_steps and save_steps must be multiples of updates_per_rollout (2).
         An existing run is never silently overwritten; choose a new OUTPUT_ROOT for a new run.
         """),
         code("""
@@ -156,9 +162,9 @@ def cells():
         - `logs/dapo_llama32_3b_base/`: console logs, resolved config, data report and run manifest.
         - `smoke_attempts/<timestamp>/`: separate smoke logs and checkpoint.
 
-        `rollout_first_update` and `policy_iteration` identify reused batches. Rollout statistics
+        `rollout_first_update`, `minibatch_index` and `policy_iteration` identify each update. Rollout statistics
         repeat on the second pass; sum `new_generated_tokens` for actual new generation.
-        Reused-batch accuracy is not a fresh measurement of the updated model.
+        Cached rollout accuracy is not a fresh measurement of the updated model.
         Console logs are automatic. Save the notebook itself in Drive through Colab if you
         also want its displayed cell outputs. No checkpoint weights are packaged for sharing.
         """),

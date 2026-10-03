@@ -172,18 +172,21 @@ For the separate **EXAONE DAPO pilot**, see
 [`train_dapo_exaone.ipynb`](notebooks/train_dapo_exaone.ipynb) and
 [the DAPO run guide](docs/dapo.md). Its plain `MODEL_KIND = "base"` / `"sft"`
 setting selects the original EXAONE model or the original `sft_s1k/epoch_5` checkpoint.
-Preparation, GPU smoke and the 100-update training pilot are separate cells; all run outputs
+Preparation, GPU smoke and the 300-update training run are separate cells; all run outputs
 are saved to Drive. Push the new implementation to GitHub main before Colab setup.
-The notebook now uses `configs/dapo_reuse.yaml`: two optimizer updates per generated batch,
-with fixed old-policy probabilities, and a two-update smoke. It defaults to the base model
-and saves the fresh experiment under `LG-AIME-DAPO-Reuse2`. The 100-update budget therefore
-uses 50 fresh rollout batches. Other training hyperparameters are unchanged.
+The notebook uses `configs/dapo_minibatch.yaml`: generate 128 retained responses, then
+update on two **disjoint 64-response minibatches**, each answer used once. Old-policy
+probabilities and advantages remain fixed; loss uses each minibatch's own active token count.
+The default is a fresh base-model run for 300 optimizer updates (150 fresh rollout batches),
+saving every 20 updates under `LG-AIME-DAPO-MiniBatch300`. Smoke splits 16 responses into
+8+8 for two updates. The older one-update and two-pass configs remain available for their
+existing runs. Learning rate, 20-optimizer-update warmup and other hyperparameters are unchanged.
 
 For **Llama 3.2 3B Instruct DAPO**, use
 [`train_dapo_llama32_3b.ipynb`](notebooks/train_dapo_llama32_3b.ipynb), with
-`configs/dapo_llama32_3b.yaml`. It starts from the pinned instruction model, uses full-parameter
-training and the same two-update rollout schedule, and saves under
-`LG-AIME-DAPO-Llama32-3B`. Preparation, two-update GPU smoke and full training are separate cells.
+`configs/dapo_llama32_3b_minibatch.yaml`. It starts from the pinned instruction model, uses full-parameter
+training and the same 300-update disjoint-minibatch schedule, and saves under
+`LG-AIME-DAPO-Llama32-3B-MiniBatch300`. Preparation, two-update GPU smoke and full training are separate cells.
 The native Llama template has a fixed date, and all three native stop tokens are configured.
 Use an HF token with access to the gated model. No EXAONE/SFT files are needed.
 

@@ -108,8 +108,9 @@ def test_llama_notebook_smoke_full_and_resume_commands(tmp_path, monkeypatch):
             log = root / "logs" / (context["RUN_NAME"] + "_smoke") / "steps.jsonl"
             log.parent.mkdir(parents=True)
             log.write_text('\n'.join(json.dumps(r) for r in [
-                {"policy_iteration": 1},
-                {"policy_iteration": 2, "reused_rollout": True, "new_generated_tokens": 0}]))
+                {"policy_iteration": 1, "minibatch_index": 1, "reused_rollout": False},
+                {"policy_iteration": 1, "minibatch_index": 2, "reused_rollout": False,
+                 "cached_rollout": True, "new_generated_tokens": 0}]))
     context["run_logged"] = run
     for flag in ["RUN_SMOKE", "RUN_TRAINING"]:
         source = next(s for s in codes if f"{flag} = False" in s)

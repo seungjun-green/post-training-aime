@@ -10,8 +10,8 @@ is selected by this notebook. Push the implementation to GitHub main before setu
 
 ## Training and data
 
-`configs/dapo_reuse.yaml` defines G=8, 16 retained mixed-correctness questions per rollout,
-128 accumulated responses, microbatch 1, LR 1e-6 with 20-update warmup then constant LR,
+`configs/dapo_minibatch.yaml` defines G=8, 16 retained mixed-correctness questions per rollout,
+128 generated responses split into disjoint 64-response optimizer minibatches, microbatch 1, LR 1e-6 with 20-update warmup then constant LR,
 temperature/top-p 1, clip 0.20/0.28, group-normalized shaped rewards, token-normalized loss,
 and KL coefficient zero. The rule-based shared scorer gives +1/-1 for correct/incorrect final
 boxed answers. A linear penalty starts at 16,384 completion tokens and reaches -1 at the
@@ -32,14 +32,19 @@ are exhausted. Exhaustion stops without an update for that batch and saves the g
 and filtering diagnostics. This can happen if the selected policy cannot solve enough questions;
 the runner does not invent rewards or disable filtering to force a successful run.
 
-The 100-update pilot uses **two optimizer updates per retained rollout batch**
-(`algorithm.num_iterations: 2`), so there are 50 fresh rollout batches. TRL caches the
-completion tokens, advantages, old-policy log-probabilities and sampling correction across
-both passes. On the second pass the policy has changed but the denominator remains fixed;
-asymmetric clipping can engage when a ratio crosses 0.8/1.28. Clipping can still be zero for
-small policy changes, and no benchmark improvement is guaranteed. Checkpoints are saved at
-updates 20/40/60/80/100. This is an adaptation for one GPU, not an exact
-reproduction of the paper's large-batch training schedule. No benchmark evaluation is launched.
+The run uses **300 optimizer updates**, with **150 fresh rollout batches**. Each generated
+batch of 128 responses is shuffled and divided into two disjoint 64-response minibatches.
+`algorithm.num_iterations: 1` means each response is used exactly once. TRL caches original
+log-probabilities, advantages and sampling correction for both minibatches. The second
+minibatch is evaluated under the already-updated policy, so clipping can engage without
+repeating the same answers. A zero clip fraction is still possible for small changes.
+
+The loss denominator is calculated **after TRL's shuffle** and equals the active completion
+tokens in that optimizer minibatch (including all 64 accumulated microbatches), not the full
+128-response rollout. Checkpoints save every 20 optimizer updates through 300. This follows
+the paper's disjoint-minibatch structure at a smaller scale, not its exact 8192/512 batch
+sizes or 16 updates per rollout. Warmup remains 20 optimizer updates, not the paper's 20
+rollout steps. No benchmark improvement is promised and no evaluation is launched.
 
 ## Runtime and precision
 
@@ -60,36 +65,39 @@ Only one temporary snapshot is retained. The stock TRL train-vs-rollout importan
 correction (cap 2) remains enabled and its mismatch metrics are logged.
 
 The policy log-prob path trims per-response padding and chunks vocabulary calculations.
-Every microbatch uses the same total completion-token denominator for its accumulated loss.
+Every microbatch within one optimizer minibatch uses that minibatch's total active-token denominator.
 No learned reward/critic/reference model is loaded, and no LoRA or quantization is used.
 
 ## Smoke, outputs and resume
 
 Run preparation, then enable `RUN_SMOKE`. The smoke performs two real optimizer updates using
-one rollout of two retained groups, G=8 and the full completion cap. Warmup is disabled
+one rollout of two retained groups (16 responses), split into disjoint 8-response minibatches,
+G=8 and the full completion cap. Warmup is disabled
 to exercise a nonzero update. Each smoke has a timestamped directory; full training loads fresh
 source weights and never inherits smoke weights. A smoke can stop for insufficient mixed groups.
 Enable `RUN_TRAINING` for the separate pilot.
 
-Default output root: `/content/drive/MyDrive/LG-AIME-DAPO-Reuse2`.
+Default output root: `/content/drive/MyDrive/LG-AIME-DAPO-MiniBatch300`.
 The notebook starts a fresh base-model run by default; MODEL_KIND can still select SFT.
 The original `configs/dapo.yaml` and `configs/dapo_continue_300.yaml` keep one update per
-rollout. Do not resume those checkpoints with the new reuse config; their original
+rollout. Do not resume those checkpoints with the new minibatch config; their original
 continuation notebook remains separate.
 
 - Checkpoints: `checkpoints/dapo_exaone_<base|sft>/checkpoint-<step>/`.
 - Per-update metrics: `logs/dapo_exaone_<base|sft>/steps.jsonl`.
-  `rollout_first_update`, `policy_iteration`, and `reused_rollout` identify reuse.
-  Rollout statistics repeat across passes; sum `new_generated_tokens` to count fresh
+  `rollout_first_update` and `minibatch_index` identify each optimizer update.
+  `policy_iteration` stays 1 and `reused_rollout` stays false; `cached_rollout` is true
+  on the second minibatch, which uses different responses from the same rollout.
+  Rollout statistics repeat across minibatches; sum `new_generated_tokens` to count fresh
   generation without double-counting. Accuracy on a reused batch is not a new measurement.
 - Raw rollout text and reward/filtering diagnostics: `logs/<run>/rollouts/attempt_*/update_*/`.
 - Console output, resolved settings, data report, manifest and attempt timing/memory: `logs/<run>/`.
 - Smoke logs/checkpoint: `smoke_attempts/<run>/<timestamp>/`.
 
 Checkpoints include full model/tokenizer, optimizer, scheduler, RNG and Trainer state. Allow
-approximately 200GB of Drive space for five full checkpoints and a smoke checkpoint.
-max_steps and save_steps must be multiples of num_iterations. Checkpoint saves/resume
-are restricted to complete reuse cycles because TRL does not save its rollout cache.
+approximately 500GB of Drive space for fifteen full checkpoints and a smoke checkpoint.
+max_steps and save_steps must be multiples of updates_per_rollout (2). Checkpoint saves/resume
+are restricted to complete rollout cycles because TRL does not save its rollout cache.
 Resume with `RESUME_CHECKPOINT` pointing at the latest completed checkpoint. Code, settings,
 source, runtime and data must match. Interrupted work after that checkpoint is replayed; abandoned
 step logs and incomplete checkpoint directories are preserved separately. Raw attempts are
@@ -106,12 +114,12 @@ References: [DAPO paper](https://arxiv.org/html/2503.14476v1),
 
 ## Llama 3.2 3B Instruct
 
-Use `notebooks/train_dapo_llama32_3b.ipynb` and `configs/dapo_llama32_3b.yaml`.
+Use `notebooks/train_dapo_llama32_3b.ipynb` and `configs/dapo_llama32_3b_minibatch.yaml`.
 The source is `meta-llama/Llama-3.2-3B-Instruct`, pinned to
 `0cb88a4f764b7a12671c53f0838cd831a0843b95` ([official model](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct)).
 The notebook starts from that instruction model and does full-parameter DAPO, using the same
-algorithm, data, response budgets, learning rate, seeds and 100-update/two-pass schedule as
-`dapo_reuse.yaml`. It has no SFT-source selector. The existing EXAONE notebooks remain separate.
+algorithm, data, response budgets, learning rate, seeds and 300-update/disjoint-minibatch schedule as
+`dapo_minibatch.yaml`. It has no SFT-source selector. The existing EXAONE notebooks remain separate.
 
 `train/dapo_model.py` configures the existing native vocabulary: EOS `<|eot_id|>` and padding
 `<|finetune_right_pad_id|>`, without adding tokens or resizing embeddings. The shared English
@@ -123,17 +131,18 @@ TRL's single-EOS termination metrics are corrected from actual vLLM finish reaso
 and end-of-text are not counted as truncations. Prompt-template settings and resolved stop IDs
 are included in preparation provenance. No shared evaluation modules were changed.
 
-Default Drive root: `/content/drive/MyDrive/LG-AIME-DAPO-Llama32-3B`.
-Checkpoints: `checkpoints/dapo_llama32_3b_base/checkpoint-20/` through `checkpoint-100/`.
+Default Drive root: `/content/drive/MyDrive/LG-AIME-DAPO-Llama32-3B-MiniBatch300`.
+Checkpoints: `checkpoints/dapo_llama32_3b_base/checkpoint-20/` through `checkpoint-300/`.
 Logs: `logs/dapo_llama32_3b_base/steps.jsonl`, console logs, manifest and raw rollouts.
-Smoke outputs are isolated in `smoke_attempts/<timestamp>/`. Approximately 250 GB of Drive
-space covers five full model/Adam checkpoints and smoke. GPU code/model downloads also need
+Smoke outputs are isolated in `smoke_attempts/<timestamp>/`. Approximately 650 GB of Drive
+space covers fifteen full model/Adam checkpoints and smoke. GPU code/model downloads also need
 local runtime disk. No weights are zipped for sharing. An HF account with model access is
 required; the notebook reads `HF_TOKEN` from Colab secrets.
 
 Local tests cover model selection, fixed-date template arguments, native token setup,
 vLLM stop-parameter forwarding, EOS/EOM termination metrics, tied-embedding Llama CPU
-updates with actual second-pass clipping, and exact checkpoint resume. The public pinned
+updates with actual second-minibatch clipping, and exact checkpoint resume. Regression tests also preserve the older whole-batch
+one-update and two-pass schedules. The public pinned
 native template was additionally rendered with a synthetic vocabulary to inspect headers
 and the fixed date. Full-size weights, native tokenizer token counts, vLLM execution and
 96GB GPU fit still require the notebook's preparation/GPU smoke on Colab.

@@ -15,7 +15,13 @@ import yaml  # noqa: E402
 
 from common.io import digest, read_jsonl, write_json, write_jsonl  # noqa: E402
 from eval.run_english_eval import git_identity  # noqa: E402
-from train.dapo_data import load_config, load_data, prepare_data, select_model  # noqa: E402
+from train.dapo_data import (  # noqa: E402
+    batch_schedule,
+    load_config,
+    load_data,
+    prepare_data,
+    select_model,
+)
 from train.dapo_model import configure_tokenizer, stop_token_ids  # noqa: E402
 from train.dapo_resume import (  # noqa: E402
     check_checkpoint,
@@ -80,8 +86,8 @@ def main():
     resume_checkpoint = args.resume_from_checkpoint or args.extend_from_checkpoint
     if resume_checkpoint:
         marker, _ = check_checkpoint(resume_checkpoint)
-        if marker["global_step"] % config["algorithm"].get("num_iterations", 1):
-            raise ValueError("Resume must start at a complete rollout reuse cycle boundary")
+        if marker["global_step"] % batch_schedule(config)["updates_per_rollout"]:
+            raise ValueError("Resume must start at a complete rollout cycle boundary")
     source, source_identity = select_model(config, args.model_kind, args.sft_root)
     # Keep the original resolved dataset revision on resume, even if HF main moved.
     previous_manifest = log_dir / "run_manifest.json"

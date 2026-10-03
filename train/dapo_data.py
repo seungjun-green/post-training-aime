@@ -13,6 +13,20 @@ from pipeline.datasets import core_dapo_problem
 from train.dapo_model import training_prompt
 
 
+def batch_schedule(config):
+    a = config["algorithm"]
+    count = a["group_size"] * a["retained_groups"]
+    mini = a.get("mini_batch_size", count)
+    iterations = a.get("num_iterations", 1)
+    if type(iterations) is not int or iterations <= 0:
+        raise ValueError("algorithm.num_iterations must be a positive integer")
+    if type(mini) is not int or mini <= 0 or count % mini:
+        raise ValueError("mini_batch_size must be a positive divisor of the rollout response count")
+    return {"rollout_batch_size": count, "mini_batch_size": mini,
+            "minibatches_per_rollout": count // mini,
+            "updates_per_rollout": count // mini * iterations}
+
+
 def load_config(path, smoke=False):
     config = yaml.safe_load(Path(path).read_text())
     a, t, r = config["algorithm"], config["training"], config["rollout"]
@@ -21,16 +35,15 @@ def load_config(path, smoke=False):
             a[key] = config["smoke"][key]
         for key in ["max_steps", "save_steps", "warmup_steps"]:
             t[key] = config["smoke"][key]
-    # Missing in the original manifests: preserve their one-update schedule.
-    iterations = a.get("num_iterations", 1)
-    if type(iterations) is not int or iterations <= 0:
-        raise ValueError("algorithm.num_iterations must be a positive integer")
+        if "mini_batch_size" in a:
+            a["mini_batch_size"] = config["smoke"]["mini_batch_size"]
     for value in [a["group_size"], a["retained_groups"], a["candidate_groups_per_batch"],
                   a["max_generation_batches"], t["max_steps"], t["save_steps"], a["logprob_chunk_tokens"]]:
         if type(value) is not int or value <= 0:
             raise ValueError("Batch sizes, retry limits and step counts must be positive integers")
-    if t["max_steps"] % iterations or t["save_steps"] % iterations:
-        raise ValueError("max_steps and save_steps must end on a complete rollout reuse cycle")
+    cycle = batch_schedule(config)["updates_per_rollout"]
+    if t["max_steps"] % cycle or t["save_steps"] % cycle:
+        raise ValueError("max_steps and save_steps must end on a complete rollout cycle")
     if a["group_size"] < 2 or not 0 <= a["soft_length_limit"] < a["max_completion_length"]:
         raise ValueError("Invalid group size or length penalty interval")
     if config["data"]["max_prompt_tokens"] + a["max_completion_length"] > r["max_model_len"]:

@@ -19,15 +19,17 @@ if importlib.util.find_spec("vllm") is not None:
 from trl import GRPOConfig, GRPOTrainer
 
 from common.io import append_jsonl, write_json, write_jsonl
+from train.dapo_data import batch_schedule
 from train.dapo_sampling import collect_groups
 
 
 def make_arguments(config, checkpoint_dir, log_dir):
     a = config["algorithm"]
-    count = a["group_size"] * a["retained_groups"]
+    schedule = batch_schedule(config)
     return GRPOConfig(
         output_dir=str(checkpoint_dir), logging_dir=str(log_dir), **config["training"],
-        gradient_accumulation_steps=count, steps_per_generation=count,
+        gradient_accumulation_steps=schedule["mini_batch_size"],
+        steps_per_generation=schedule["rollout_batch_size"],
         num_generations=a["group_size"], num_iterations=a.get("num_iterations", 1),
         max_prompt_length=config["data"]["max_prompt_tokens"], max_completion_length=a["max_completion_length"],
         temperature=a["temperature"], top_p=a["top_p"], top_k=None, repetition_penalty=1.0,
@@ -66,6 +68,7 @@ class DAPOTrainer(GRPOTrainer):
         self.rollout_stats = {}
         self.update_started = None
         self.rollout_first_update = None
+        self.schedule = batch_schedule(dapo_config)
         super().__init__(*args, reward_funcs=recorded_rewards, **kwargs)
         if self.accelerator.num_processes != 1:
             raise ValueError("This DAPO runner supports exactly one process/GPU")
@@ -88,7 +91,7 @@ class DAPOTrainer(GRPOTrainer):
             write_json(directory / "sampling.json", stats)
 
         def progress(stats):
-            print(f"DAPO rollout for updates {step + 1}-{step + self.num_iterations}: "
+            print(f"DAPO rollout for updates {step + 1}-{step + self.schedule['updates_per_rollout']}: "
                   f"{stats['retained_groups']}/{self.dapo_config['algorithm']['retained_groups']} "
                   f"mixed groups retained from {stats['candidate_groups']} questions", flush=True)
 
@@ -121,6 +124,23 @@ class DAPOTrainer(GRPOTrainer):
         if int(output["completion_mask"].sum()) != int(output["num_items_in_batch"]):
             raise ValueError("DAPO accumulated-token denominator does not match the active completions")
         return output
+
+    def _prepare_inputs(self, generation_batch):
+        inputs = super()._prepare_inputs(generation_batch)
+        if self.model.training and self.schedule["minibatches_per_rollout"] > 1:
+            # TRL shuffles and splits the generated batch before returning the first
+            # microbatch. Normalize AFTER that shuffle, over exactly the responses
+            # contributing to each optimizer update, not the entire rollout.
+            if (self._step - 1) % self.args.steps_per_generation == 0:
+                width = self.args.gradient_accumulation_steps
+                for start in range(0, len(self._buffered_inputs), width):
+                    minibatch = self._buffered_inputs[start:start + width]
+                    total = sum(batch["completion_mask"].sum() for batch in minibatch)
+                    for batch in minibatch:
+                        batch["num_items_in_batch"] = total
+            # inputs is an entry of _buffered_inputs; its denominator is now the
+            # active minibatch count. Old log-probs/advantages stay unchanged.
+        return inputs
 
     def _generate_single_turn(self, prompts, images):
         if images is not None or self.cached_rollout is None:
@@ -169,11 +189,16 @@ class DAPOTrainer(GRPOTrainer):
                 if key not in logs or not math.isfinite(float(logs[key])):
                     raise FloatingPointError(f"Missing/nonfinite DAPO optimizer metric: {key}")
             seconds = time.perf_counter() - self.update_started
-            iteration = self.state.global_step - self.rollout_first_update + 1
-            fresh_tokens = self.rollout_stats["generated_tokens"] if iteration == 1 else 0
+            update_in_rollout = self.state.global_step - self.rollout_first_update + 1
+            minibatches = self.schedule["minibatches_per_rollout"]
+            iteration = (update_in_rollout - 1) // minibatches + 1
+            fresh_tokens = self.rollout_stats["generated_tokens"] if update_in_rollout == 1 else 0
             record = {**logs, **self.rollout_stats, "step": self.state.global_step,
                       "rollout_first_update": self.rollout_first_update,
                       "policy_iteration": iteration, "num_iterations": self.num_iterations,
+                      "minibatch_index": (update_in_rollout - 1) % minibatches + 1,
+                      "update_in_rollout": update_in_rollout, **self.schedule,
+                      "cached_rollout": update_in_rollout > 1,
                       "reused_rollout": iteration > 1, "new_generated_tokens": fresh_tokens,
                       "update_seconds": seconds, "generated_tokens_per_second": fresh_tokens / seconds}
             # Capture TRL entropy, clipping, shaped rewards and sampling mismatch metrics.
@@ -185,8 +210,8 @@ class DAPOTrainer(GRPOTrainer):
     def _save_checkpoint(self, model, trial):
         # TRL does not serialize its cached rollouts/old log-probs. Save only after
         # every configured pass; resume can then safely generate a fresh batch.
-        if self.state.global_step % self.num_iterations:
-            raise ValueError("Save checkpoints only after a complete rollout reuse cycle")
+        if self.state.global_step % self.schedule["updates_per_rollout"]:
+            raise ValueError("Save checkpoints only after a complete rollout cycle")
         destination = Path(self.args.output_dir) / f"checkpoint-{self.state.global_step}"
         if destination.exists():
             raise FileExistsError(f"Refusing to overwrite checkpoint: {destination}")

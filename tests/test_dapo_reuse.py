@@ -25,7 +25,7 @@ def test_reuse_config_and_cycle_boundaries(tmp_path):
         bad[section][field] = value
         target = tmp_path / "bad.yaml"
         target.write_text(yaml.safe_dump(bad))
-        with pytest.raises(ValueError, match="num_iterations|reuse cycle"):
+        with pytest.raises(ValueError, match="num_iterations|rollout cycle"):
             load_config(target)
     # Old manifests retain their exact configuration, including the absent key.
     assert "num_iterations" not in load_config(ROOT / "configs/dapo.yaml")["algorithm"]
@@ -33,7 +33,8 @@ def test_reuse_config_and_cycle_boundaries(tmp_path):
 
 
 @pytest.mark.parametrize("llama", [False, True])
-def test_two_pass_clipped_gradients_fixed_old_policy_and_exact_resume(tmp_path, llama):
+@pytest.mark.parametrize("minibatch", [False, True])
+def test_clipped_gradients_fixed_old_policy_and_exact_resume(tmp_path, llama, minibatch):
     torch = pytest.importorskip("torch")
     pytest.importorskip("trl")
     from datasets import Dataset
@@ -54,6 +55,8 @@ def test_two_pass_clipped_gradients_fixed_old_policy_and_exact_resume(tmp_path, 
     cfg["model_kind"] = "base"
     cfg["algorithm"].update(group_size=2, retained_groups=2, candidate_groups_per_batch=2,
                             max_completion_length=128, soft_length_limit=120, logprob_chunk_tokens=8)
+    if minibatch:
+        cfg["algorithm"].update(num_iterations=1, mini_batch_size=2)
     # Deliberately large test-only LR makes clipping observable in a tiny model.
     # Production LR/clip thresholds stay unchanged.
     cfg["training"].update(max_steps=4, save_steps=2, warmup_steps=0, learning_rate=0.05,
@@ -103,7 +106,8 @@ def test_two_pass_clipped_gradients_fixed_old_policy_and_exact_resume(tmp_path, 
         def _compute_loss(self, model, inputs):
             self.seen.setdefault(self.state.global_step, []).append({
                 key: inputs[key].detach().clone()
-                for key in ["completion_ids", "old_per_token_logps", "advantages", "num_items_in_batch"]})
+                for key in ["prompt_ids", "prompt_mask", "completion_ids", "completion_mask",
+                            "old_per_token_logps", "advantages", "num_items_in_batch"]})
             return super()._compute_loss(model, inputs)
 
     class AuditGradient(TrainerCallback):
@@ -113,7 +117,23 @@ def test_two_pass_clipped_gradients_fixed_old_policy_and_exact_resume(tmp_path, 
             oracle = deepcopy(model)
             oracle.zero_grad(set_to_none=True)
             terms, tokens, clipped = [], 0, 0
-            for prompt, ids, old, sign in self.rollout.records:
+            records = self.rollout.records
+            if minibatch:
+                # Locate the exact disjoint examples selected AFTER TRL's shuffle.
+                lookup = {(tuple(p), tuple(ids)): (old, sign) for p, ids, old, sign in records}
+                records = []
+                for batch in self.trainer.seen[state.global_step]:
+                    prompt = batch["prompt_ids"][batch["prompt_mask"].bool()].tolist()
+                    ids = batch["completion_ids"][batch["completion_mask"].bool()].tolist()
+                    old, sign = lookup[(tuple(prompt), tuple(ids))]
+                    torch.testing.assert_close(batch["old_per_token_logps"][batch["completion_mask"].bool()],
+                                               old, rtol=1e-6, atol=1e-6)
+                    torch.testing.assert_close(batch["advantages"], torch.tensor([sign / (2**0.5 + 1e-4)]))
+                    records.append((prompt, ids, old, sign))
+                assert len(records) == 2
+                denominator = sum(len(ids) for _, ids, _, _ in records)
+                assert all(int(b["num_items_in_batch"]) == denominator for b in self.trainer.seen[state.global_step])
+            for prompt, ids, old, sign in records:
                 ratio = (logps(oracle, prompt, ids) - old).exp()
                 advantage = sign / (2**0.5 + 1e-4)
                 terms.append(-torch.minimum(ratio * advantage, ratio.clamp(0.8, 1.28) * advantage).sum())
@@ -139,6 +159,7 @@ def test_two_pass_clipped_gradients_fixed_old_policy_and_exact_resume(tmp_path, 
             processing_class=tokenizer, train_dataset=Dataset.from_list(prepared), dapo_config=cfg,
             prepared_rows=prepared, rollout=rollout, log_dir=tmp_path / name / "logs", run_identity="reuse-test",
             callbacks=[audit] + ([StopAfterCycle()] if stop else []))
+        audit.trainer = trainer
         return trainer, audit
 
     full, audit = make_trainer("full")
@@ -147,15 +168,26 @@ def test_two_pass_clipped_gradients_fixed_old_policy_and_exact_resume(tmp_path, 
     assert audit.clipped[0] == audit.clipped[2] == 0
     assert audit.clipped[1] > 0  # Actual second-pass clipping, no fabricated log-probabilities.
     for first, second in [(0, 1), (2, 3)]:
-        for a, b in zip(full.seen[first], full.seen[second], strict=True):
-            for key in a:
-                torch.testing.assert_close(a[key], b[key], rtol=0, atol=0)
+        if minibatch:
+            def keys(step):
+                return {(tuple(b["prompt_ids"][b["prompt_mask"].bool()].tolist()),
+                         tuple(b["completion_ids"][b["completion_mask"].bool()].tolist()))
+                        for b in full.seen[step]}
+            assert len(keys(first)) == len(keys(second)) == 2
+            assert not keys(first) & keys(second)  # No repeated answers across updates.
+            assert len(keys(first) | keys(second)) == 4
+        else:
+            for a, b in zip(full.seen[first], full.seen[second], strict=True):
+                for key in a:
+                    torch.testing.assert_close(a[key], b[key], rtol=0, atol=0)
     assert any(not torch.equal(full.rollout.snapshots[0][n], p)
                for n, p in full.rollout.snapshots[1].items())
     logs = [json.loads(line) for line in (tmp_path / "full/logs/steps.jsonl").read_text().splitlines()]
-    assert [r["policy_iteration"] for r in logs] == [1, 2, 1, 2]
+    assert [r["policy_iteration"] for r in logs] == ([1, 1, 1, 1] if minibatch else [1, 2, 1, 2])
     assert [r["rollout_first_update"] for r in logs] == [1, 1, 3, 3]
-    assert [r["reused_rollout"] for r in logs] == [False, True, False, True]
+    assert [r["reused_rollout"] for r in logs] == ([False] * 4 if minibatch else [False, True, False, True])
+    if minibatch:
+        assert [r["minibatch_index"] for r in logs] == [1, 2, 1, 2]
     assert logs[0]["new_generated_tokens"] > 0 and logs[1]["new_generated_tokens"] == 0
     assert logs[1]["policy_metrics"]["clip_ratio/region_mean"] > 0
     if llama:
@@ -173,5 +205,5 @@ def test_two_pass_clipped_gradients_fixed_old_policy_and_exact_resume(tmp_path, 
     for name, p in full.model.named_parameters():
         torch.testing.assert_close(p, dict(resumed.model.named_parameters())[name], rtol=0, atol=0)
     resumed.state.global_step = 3
-    with pytest.raises(ValueError, match="complete rollout reuse cycle"):
+    with pytest.raises(ValueError, match="complete rollout cycle"):
         resumed._save_checkpoint(resumed.model, trial=None)
