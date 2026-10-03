@@ -31,6 +31,35 @@ def test_success_returns_log_and_keeps_prior_attempt(tmp_path):
     assert path.read_text().count("completed") == 2
 
 
+def test_notebook_progress_updates_in_place_and_preserves_error_log(tmp_path, monkeypatch, capsys):
+    created, updates = [], []
+    handle = SimpleNamespace(update=lambda data, **kw: updates.append(data["text/plain"]))
+
+    def display(data, **kwargs):
+        assert kwargs == {"raw": True, "display_id": True}
+        created.append(data["text/plain"])
+        return handle
+
+    monkeypatch.setitem(sys.modules, "IPython", SimpleNamespace(get_ipython=lambda: SimpleNamespace(kernel=True)))
+    monkeypatch.setitem(sys.modules, "IPython.display", SimpleNamespace(display=display))
+    monkeypatch.setenv("HF_TOKEN", "private-token")
+    lines = ("\rProcessed prompts: 0%|          | 0/128 [00:00<?, ?it/s]\n\x1b[A"
+             "\rProcessed prompts: 1%|          | 1/128 [00:02<05:57, 2.81s/it]\n\x1b[A"
+             "\rProcessed prompts: 2%|          | 2/128 [00:02<02:34, 1.23s/it]\n"
+             "DAPO update 1: 2/16 mixed groups retained\nactual failure private-token\n")
+    command = [sys.executable, "-c", f"import sys; sys.stdout.write({lines!r}); sys.exit(1)"]
+    path = tmp_path / "console.log"
+    with pytest.raises(RuntimeError, match="actual failure") as error:
+        run_logged(command, cwd=tmp_path, log_path=path, compact_progress=True)
+    assert len(created) == 1 and len(updates) == 2
+    assert "2/128" in updates[-1]
+    visible = capsys.readouterr().out
+    assert "Processed prompts" not in visible and "DAPO update 1" in visible
+    assert "actual failure [REDACTED]" in visible
+    assert path.read_text().count("Processed prompts") == 3
+    assert "private-token" not in path.read_text() + str(error.value)
+
+
 @pytest.mark.parametrize("exit_code,completed", [(0, 5), (1, 4)])
 def test_progress_tracks_problem_counts_and_does_not_complete_failures(
     tmp_path, monkeypatch, exit_code, completed

@@ -175,6 +175,11 @@ setting selects the original EXAONE model or the original `sft_s1k/epoch_5` chec
 Preparation, GPU smoke and the 100-update training pilot are separate cells; all run outputs
 are saved to Drive. Push the new implementation to GitHub main before Colab setup.
 
+After completing step 100, use
+[`continue_dapo_exaone_100_to_300.ipynb`](notebooks/continue_dapo_exaone_100_to_300.ipynb)
+to restore the full training state and add 200 updates. It defaults to the base-model run,
+preserves original outputs, and writes steps 101–300 under `LG-AIME-DAPO-100to300` on Drive.
+
 ## English preparation notebook (current)
 
 Upload [`notebooks/prepare_english_datasets.ipynb`](notebooks/prepare_english_datasets.ipynb) to **Colab CPU**, add a write-capable `HF_TOKEN`, and run the cells in order. It applies the existing normalization-v2, 8-gram, 70% per-eval-problem coverage rule to the two training datasets. It does not deduplicate within/between training datasets. All five eval sets remain unchanged, as do every retained original column and text value.

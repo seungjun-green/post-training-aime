@@ -126,7 +126,8 @@ def cells():
             smoke_root = Path(OUTPUT_ROOT) / "smoke_attempts" / RUN_NAME / datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
             command = list(TRAIN_COMMAND)
             command[command.index("--output-root") + 1] = str(smoke_root)
-            run_logged(command + ["--smoke"], cwd=CODE_ROOT, log_path=smoke_root / "smoke_console.log")
+            run_logged(command + ["--smoke"], cwd=CODE_ROOT, log_path=smoke_root / "smoke_console.log",
+                       compact_progress=True)
             print("Smoke results:", smoke_root)
         else:
             print("Smoke is off. Set RUN_SMOKE = True to test one DAPO update.")
@@ -148,7 +149,8 @@ def cells():
         RESUME_CHECKPOINT = ""
         if RUN_TRAINING:
             command = TRAIN_COMMAND + (["--resume-from-checkpoint", RESUME_CHECKPOINT] if RESUME_CHECKPOINT else [])
-            run_logged(command, cwd=CODE_ROOT, log_path=run_logs / "training_console.log")
+            run_logged(command, cwd=CODE_ROOT, log_path=run_logs / "training_console.log",
+                       compact_progress=True)
         else:
             print("Training is off. Set RUN_TRAINING = True to run the 100-update pilot.")
         """),

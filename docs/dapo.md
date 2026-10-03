@@ -89,3 +89,28 @@ integration and 96GB memory fit have not been run locally.** Use the included GP
 References: [DAPO paper](https://arxiv.org/html/2503.14476v1),
 [verl recipe](https://verl.readthedocs.io/en/latest/algo/dapo.html),
 [TRL 0.24 GRPO trainer](https://huggingface.co/docs/trl/v0.24.0/grpo_trainer).
+
+## Continue from 100 to 300 updates
+
+Use `notebooks/continue_dapo_exaone_100_to_300.ipynb` with
+`configs/dapo_continue_300.yaml`. It defaults to `MODEL_KIND = "base"`, restores
+`LG-AIME-DAPO/checkpoints/dapo_exaone_base/checkpoint-100`, and writes new artifacts to
+`LG-AIME-DAPO-100to300`. Original files remain unchanged. Checkpoints are saved at
+120/140/.../300; logs use absolute steps 101–300. Ten additional full checkpoints require
+approximately 300 GB of Drive space. There is no smoke run or evaluation in this notebook.
+
+`--extend-from-checkpoint` explicitly permits an increased `training.max_steps` and a new
+code revision. All other configuration fields, source identity, dataset/tokenizer report,
+package versions and precision must match the parent manifest. The parent dataset revision
+is reused. Parent checkpoint identity and both code revisions are recorded in the new manifest.
+The scheduler must be `constant_with_warmup`, so extending the horizon does not change its
+schedule. Model weights, Adam state, scheduler and RNG restore through Trainer's normal resume
+path; warmup is not repeated. The validator checks resume files and shard lengths without
+loading multi-gigabyte weights into the notebook.
+
+The training cell automatically resumes the latest completed checkpoint in the continuation
+folder after interruption, while keeping the parent provenance. Once 300 is complete, it skips
+training. If no continuation checkpoint has completed after a failed attempt, select a new
+OUTPUT_ROOT. Local tests verify extension from a finished run, restored optimizer step counts
+and learning rate, rejection of changed hyperparameters, incomplete checkpoint detection,
+and notebook commands. The full 200-update continuation must run on the user's GPU.

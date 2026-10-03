@@ -16,6 +16,11 @@ import yaml  # noqa: E402
 from common.io import digest, read_jsonl, write_json, write_jsonl  # noqa: E402
 from eval.run_english_eval import git_identity  # noqa: E402
 from train.dapo_data import load_config, load_data, prepare_data, select_model  # noqa: E402
+from train.dapo_resume import (  # noqa: E402
+    check_checkpoint,
+    check_extension_runtime,
+    extension_source,
+)
 from train.stage1_sft import check_hardware, tokenizer_identity  # noqa: E402
 
 
@@ -54,12 +59,13 @@ def main():
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--resume-from-checkpoint")
+    parser.add_argument("--extend-from-checkpoint", help="Continue a completed run into a separate output root")
     parser.add_argument("--local-data", help="Offline preparation only: verified envelope JSONL")
     parser.add_argument("--local-tokenizer", help="Offline preparation only: pinned tokenizer snapshot")
     args = parser.parse_args()
     if (args.local_data or args.local_tokenizer) and not args.prepare_only:
         parser.error("Local input overrides are only for preparation")
-    if args.smoke and (args.prepare_only or args.resume_from_checkpoint):
+    if args.smoke and (args.prepare_only or args.resume_from_checkpoint or args.extend_from_checkpoint):
         parser.error("Smoke must be a separate fresh training run")
     config = load_config(args.config, smoke=args.smoke)
     config["model_kind"] = args.model_kind
@@ -67,6 +73,12 @@ def main():
     root = Path(args.output_root).resolve()
     checkpoints = root / "checkpoints" / name
     log_dir = root / "logs" / name
+    parent_manifest = continuation = None
+    if args.extend_from_checkpoint:
+        parent_manifest, continuation = extension_source(config, args.extend_from_checkpoint, root)
+    resume_checkpoint = args.resume_from_checkpoint or args.extend_from_checkpoint
+    if args.resume_from_checkpoint:
+        check_checkpoint(args.resume_from_checkpoint)
     source, source_identity = select_model(config, args.model_kind, args.sft_root)
     # Keep the original resolved dataset revision on resume, even if HF main moved.
     previous_manifest = log_dir / "run_manifest.json"
@@ -78,7 +90,8 @@ def main():
     token = os.getenv("HF_TOKEN")
     set_seed(config["training"]["seed"])
     revision = config["model"]["revision"] if args.model_kind == "base" else None
-    tokenizer = AutoTokenizer.from_pretrained(args.local_tokenizer or source, revision=revision,
+    tokenizer = AutoTokenizer.from_pretrained(args.local_tokenizer or resume_checkpoint or source,
+                                              revision=None if resume_checkpoint else revision,
                                               trust_remote_code=True, token=token)
     if tokenizer.eos_token_id is None or tokenizer.pad_token_id is None:
         raise ValueError("Use the unmodified EXAONE tokenizer with native EOS and padding")
@@ -110,6 +123,9 @@ def main():
     manifest = {"config": config, "source": source_identity, "data_report_digest": digest(report),
                 "git_commit": git_identity(), "packages": packages, "hardware": hardware,
                 "parameter_precision": "float32", "compute_precision": "bfloat16"}
+    if continuation:
+        check_extension_runtime(parent_manifest, manifest)
+        manifest["continuation"] = continuation
     identity = digest(manifest)
     checkpoints.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -117,7 +133,9 @@ def main():
     write_json(previous_manifest, {**manifest, "identity": identity})
     write_json(log_dir / "data_report.json", report)
     (log_dir / "config.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
-    if args.model_kind == "base":
+    if resume_checkpoint:
+        source = str(Path(resume_checkpoint).resolve())
+    elif args.model_kind == "base":
         source = snapshot_download(config["model"]["repo"], revision=revision, token=token,
                                    allow_patterns=["*.safetensors", "*.json", "*.py", "*.txt"])
     started = time.perf_counter()
@@ -139,7 +157,7 @@ def main():
             log_dir=log_dir, run_identity=identity)
         if tokenizer_identity(tokenizer) != original_tokenizer:
             raise ValueError("Trainer changed the shared tokenizer")
-        result = trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
+        result = trainer.train(resume_from_checkpoint=resume_checkpoint)
         if trainer.state.global_step != config["training"]["max_steps"]:
             raise ValueError("DAPO did not complete the configured update budget")
         # Save the final update even if max_steps is not a multiple of save_steps.
@@ -152,7 +170,7 @@ def main():
         write_json(log_dir / f"attempt_{time.time_ns()}.json", {
             "status": status, "elapsed_seconds": time.perf_counter() - started,
             "global_step": trainer.state.global_step if trainer else None,
-            "resume_from_checkpoint": args.resume_from_checkpoint,
+            "resume_from_checkpoint": resume_checkpoint,
             "peak_training_process_gpu_allocated_bytes": torch.cuda.max_memory_allocated(),
             "peak_training_process_gpu_reserved_bytes": torch.cuda.max_memory_reserved(),
             "memory_scope": "Training process only; vLLM may run in another process",

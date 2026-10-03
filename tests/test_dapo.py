@@ -247,6 +247,25 @@ def test_real_trl_update_save_reload_resume_and_token_loss(tmp_path):
     assert float(loss.detach()) == pytest.approx((0.8 + 0.8) / 4)
     resumed._get_per_token_logps_and_entropies = old_hook
 
+    # Continue a completed two-step run into a separate four-step run. Check that
+    # Trainer restores Adam/scheduler state instead of starting a fresh optimizer.
+    parent_checkpoint = saved / "checkpoint-2"
+    cfg["training"]["max_steps"] = 4
+    logs, saved = tmp_path / "continued_logs", tmp_path / "continued_checkpoints"
+    restored_steps = []
+    class CheckRestoredOptimizer(TrainerCallback):
+        def on_step_begin(self, args, state, control, optimizer, lr_scheduler, **kwargs):
+            restored_steps.append(state.global_step)
+            assert lr_scheduler.last_epoch == state.global_step
+            assert optimizer.param_groups[0]["lr"] == pytest.approx(1e-3)
+            assert {int(v["step"]) for v in optimizer.state.values()} == {state.global_step}
+    continued = trainer_for(LlamaForCausalLM.from_pretrained(base), [CheckRestoredOptimizer()])
+    continued.train(resume_from_checkpoint=str(parent_checkpoint))
+    assert restored_steps == [2, 3] and continued.state.global_step == 4
+    continued_records = [json.loads(line) for line in (logs / "steps.jsonl").read_text().splitlines()]
+    assert [r["step"] for r in continued_records] == [3, 4]
+    assert (parent_checkpoint / "dapo_checkpoint.json").is_file()
+
 
 def test_rollout_transport_updates_weights_and_preserves_sample_logps(tmp_path, monkeypatch):
     torch = pytest.importorskip("torch")
@@ -305,3 +324,88 @@ def test_rollout_transport_updates_weights_and_preserves_sample_logps(tmp_path, 
     assert len({p.seed for p in engine.llm.params}) == 2
     assert engine.llm.wakes == engine.llm.resets == 2
     engine.close()
+
+
+def test_accumulated_gradient_matches_independent_objective_and_next_rollout(tmp_path):
+    """Audit the actual Trainer loop, including padding, signs and accumulation."""
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("trl")
+    from copy import deepcopy
+
+    from datasets import Dataset
+    from test_llama_lora_sft import tokenizer_fixture
+    from transformers import LlamaConfig, LlamaForCausalLM, TrainerCallback, set_seed
+
+    from train.dapo_trainer import DAPOTrainer, make_arguments
+
+    torch.set_num_threads(1)
+    set_seed(42)
+    tokenizer = tokenizer_fixture()
+    cfg = small_config()
+    cfg["training"].update(max_steps=2, save_steps=2, warmup_steps=0, learning_rate=1e-3,
+                           max_grad_norm=1000, bf16=False, use_cpu=True,
+                           dataloader_pin_memory=False, disable_tqdm=True)
+    cfg["algorithm"].update(soft_length_limit=120, max_completion_length=128)
+    cfg["data"]["max_prompt_tokens"] = 500
+    rows = [{"prompt": "What is 2+2?" + " Please calculate." * i, "solution": "4"} for i in range(8)]
+    prepared, _ = prepare_data(rows, list(map(str, range(8))), tokenizer, cfg)
+    model = LlamaForCausalLM(LlamaConfig(
+        vocab_size=len(tokenizer), hidden_size=16, intermediate_size=32, num_hidden_layers=1,
+        num_attention_heads=2, num_key_value_heads=1, max_position_embeddings=1024,
+        eos_token_id=tokenizer.eos_token_id, pad_token_id=tokenizer.pad_token_id, use_cache=False))
+
+    def logps(policy, prompt_ids, response_ids):
+        # Independent ordinary causal log-softmax; do not use the custom trainer hook.
+        ids = torch.tensor([prompt_ids + response_ids])
+        logits = policy(input_ids=ids, use_cache=False).logits[0, len(prompt_ids)-1:-1]
+        return logits.log_softmax(-1).gather(-1, torch.tensor(response_ids)[:, None]).squeeze(-1)
+
+    class Rollout:
+        def __init__(self):
+            self.snapshots = []
+        def sync(self, policy):
+            self.oracle = deepcopy(policy)
+            self.oracle.zero_grad(set_to_none=True)
+            self.snapshots.append({n: p.detach().clone() for n, p in policy.named_parameters()})
+        def sleep(self):
+            pass
+        def generate(self, questions, step, index):
+            groups, terms, count = [], [], 0
+            for q in questions:
+                group = []
+                for text, sign in [(r"\boxed{4}", 1), (r"Let me think. \boxed{5}", -1)]:
+                    ids = tokenizer.encode(text + tokenizer.eos_token, add_special_tokens=False)
+                    lp = logps(self.oracle, q["prompt_token_ids"], ids)
+                    # [+1,-1]: group mean=0, sample std=sqrt(2).
+                    terms.append(-sign / (2**0.5 + 1e-4) * lp.sum())
+                    count += len(ids)
+                    group.append({"text": text, "token_ids": ids, "logprobs": lp.detach().tolist(),
+                                  "finish_reason": "stop"})
+                groups.append(group)
+            (sum(terms) / count).backward()
+            return groups
+
+    rollout = Rollout()
+    checked = []
+    class CompareGradient(TrainerCallback):
+        def on_pre_optimizer_step(self, args, state, control, model, **kwargs):
+            expected = dict(rollout.oracle.named_parameters())
+            for name, p in model.named_parameters():
+                assert p.grad is not None and expected[name].grad is not None
+                torch.testing.assert_close(p.grad, expected[name].grad, rtol=2e-4, atol=2e-6)
+            checked.append(state.global_step)
+
+    class CheckAdvantages(DAPOTrainer):
+        def _generate_and_score_completions(self, inputs):
+            batch = super()._generate_and_score_completions(inputs)
+            torch.testing.assert_close(batch["advantages"], torch.tensor([1., -1., 1., -1.]) / (2**0.5 + 1e-4))
+            return batch
+
+    trainer = CheckAdvantages(model=model, args=make_arguments(cfg, tmp_path / "weights", tmp_path / "logs"),
+        processing_class=tokenizer, train_dataset=Dataset.from_list(prepared), dapo_config=cfg,
+        prepared_rows=prepared, rollout=rollout, log_dir=tmp_path / "logs", run_identity="gradient-audit",
+        callbacks=[CompareGradient()])
+    trainer.train()
+    assert checked == [0, 1]
+    assert len(rollout.snapshots) == 2
+    assert any(not torch.equal(rollout.snapshots[0][n], p) for n, p in rollout.snapshots[1].items())

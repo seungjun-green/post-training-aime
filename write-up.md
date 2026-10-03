@@ -136,3 +136,11 @@ all 14,068 decontaminated questions (52–1,662 prompt tokens). CPU tests cover 
 dynamic refill, clipping/token normalization, training, checkpoint reload and resume.
 Actual vLLM/GPU execution remains a Colab smoke check; no DAPO benchmark gains are claimed.
 See [the run guide](docs/dapo.md) for outputs, storage requirements and runtime details.
+
+The supplied 100-update base-model log completed the pilot. Candidate-answer accuracy was
+17.3% over updates 1–20 and 20.1% over 81–100; changing sampled problems prevent treating this
+as a controlled benchmark gain. The continuation notebook now restores checkpoint 100 with
+optimizer/scheduler/RNG state and extends the same settings to a total of 300 updates. New
+outputs are isolated in `LG-AIME-DAPO-100to300`; the original run is preserved. Only the total
+step budget changes, with the constant-after-warmup schedule retained. CPU tests verify that
+a completed run can be extended without resetting optimizer state or step numbering.
