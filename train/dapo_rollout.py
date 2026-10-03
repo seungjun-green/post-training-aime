@@ -1,14 +1,15 @@
 """Single-GPU vLLM rollouts with sleep and explicit, audited weight synchronization."""
 
-from functools import partial
 from pathlib import Path
 
 
-def load_snapshot(model, path):
-    # Executed in the vLLM worker. Public apply_model API avoids version-specific worker paths.
-    from safetensors.torch import load_file
-    loaded = model.load_weights(load_file(path, device="cpu").items())
-    return len(loaded) if loaded is not None else None
+class DAPOWeightSyncWorker:
+    """vLLM worker extension; RPC sends a method name and path, never a callable."""
+
+    def load_dapo_snapshot(self, path):
+        from safetensors.torch import load_file
+        loaded = self.get_model().load_weights(load_file(path, device="cpu").items())
+        return len(loaded) if loaded is not None else None
 
 
 class VLLMRollout:
@@ -19,6 +20,7 @@ class VLLMRollout:
         self.work_dir.mkdir(parents=True, exist_ok=True)
         self.llm = LLM(model=str(source), tokenizer=str(source), trust_remote_code=True,
                        generation_config="vllm", seed=config["training"]["seed"],
+                       worker_extension_cls="train.dapo_rollout.DAPOWeightSyncWorker",
                        logprobs_mode="processed_logprobs", **config["rollout"])
         self.llm.sleep(level=1)
         self.awake = False
@@ -38,7 +40,7 @@ class VLLMRollout:
         torch.cuda.empty_cache()
         self.llm.wake_up()
         self.awake = True
-        loaded = self.llm.apply_model(partial(load_snapshot, path=str(path)))
+        loaded = self.llm.collective_rpc("load_dapo_snapshot", args=(str(path),))
         if any(count == 0 for count in loaded):
             raise RuntimeError("vLLM did not load the updated policy weights")
         self.llm.reset_prefix_cache()

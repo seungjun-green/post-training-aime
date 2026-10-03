@@ -261,15 +261,25 @@ def test_rollout_transport_updates_weights_and_preserves_sample_logps(tmp_path, 
             return set(self.weights)
     class FakeLLM:
         def __init__(self, **kwargs):
+            from importlib import import_module
+            module, name = kwargs["worker_extension_cls"].rsplit(".", 1)
+            extension = getattr(import_module(module), name)
             self.model = WorkerModel()
+            worker_type = type("Worker", (extension,), {"get_model": lambda worker: self.model})
+            self.worker = worker_type()
             self.sleep_levels, self.wakes, self.resets = [], 0, 0
             self.llm_engine = SimpleNamespace(engine_core=SimpleNamespace(shutdown=lambda: None))
         def sleep(self, level):
             self.sleep_levels.append(level)
         def wake_up(self):
             self.wakes += 1
-        def apply_model(self, fn):
-            return [fn(self.model)]
+        def collective_rpc(self, method, args):
+            # Exercise a process boundary that cannot serialize Python callables.
+            # A direct fake apply_model previously hid the real vLLM failure.
+            import json
+            method, args = json.loads(json.dumps([method, args]))
+            assert method == "load_dapo_snapshot" and isinstance(args[0], str)
+            return [getattr(self.worker, method)(*args)]
         def reset_prefix_cache(self):
             self.resets += 1
         def generate(self, prompts, sampling_params, use_tqdm):

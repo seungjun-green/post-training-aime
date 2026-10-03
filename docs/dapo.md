@@ -48,9 +48,10 @@ TRL generation path and structured decoding are not used.
 Training uses full FP32 parameters/Adam state with BF16 autocast. This preserves small updates
 at LR 1e-6; the rollout model uses BF16. vLLM runs at most 16 concurrent responses with 35%
 GPU allocation and sleeps during optimization. A fresh BF16 weight snapshot on **local SSD**
-is loaded through vLLM's public `apply_model` API before each update's sampling; prefix cache
+is loaded through a named worker-extension RPC before each update's sampling; prefix cache
 is reset. This transport adds local disk traffic but avoids fragile cross-process parameter
-references. Only one temporary snapshot is retained. The stock TRL train-vs-rollout importance
+references. RPC carries only the method name and file path, without pickle/callable serialization.
+Only one temporary snapshot is retained. The stock TRL train-vs-rollout importance
 correction (cap 2) remains enabled and its mismatch metrics are logged.
 
 The policy log-prob path trims per-response padding and chunks vocabulary calculations.
