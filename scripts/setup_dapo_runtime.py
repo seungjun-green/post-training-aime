@@ -1,4 +1,4 @@
-"""Install the isolated, pinned EXAONE DAPO training/generation runtime."""
+"""Install the isolated, pinned DAPO training/generation runtime."""
 
 import argparse
 import subprocess
@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--venv", default="/content/lg-dapo-env")
+    parser.add_argument("--architecture", choices=["ExaoneForCausalLM", "LlamaForCausalLM"],
+                        default="ExaoneForCausalLM")
     args = parser.parse_args()
     python = Path(args.venv) / "bin/python"
     if not python.exists():
@@ -22,7 +24,7 @@ def main():
         "print('torch', torch.__version__, 'transformers', transformers.__version__, "
         "'trl', trl.__version__, 'vllm', vllm.__version__); "
         "assert torch.cuda.is_available(), 'Connect the GPU runtime'; "
-        "assert 'ExaoneForCausalLM' in vllm.ModelRegistry.get_supported_archs(); "
+        f"assert {args.architecture!r} in vllm.ModelRegistry.get_supported_archs(); "
         "print(torch.cuda.get_device_name(0))"], cwd=ROOT)
 
 

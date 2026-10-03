@@ -8,9 +8,9 @@ from pathlib import Path
 
 import yaml
 
-from common.english_prompts import render_prompt
 from common.io import digest
 from pipeline.datasets import core_dapo_problem
+from train.dapo_model import training_prompt
 
 
 def load_config(path, smoke=False):
@@ -21,10 +21,16 @@ def load_config(path, smoke=False):
             a[key] = config["smoke"][key]
         for key in ["max_steps", "save_steps", "warmup_steps"]:
             t[key] = config["smoke"][key]
+    # Missing in the original manifests: preserve their one-update schedule.
+    iterations = a.get("num_iterations", 1)
+    if type(iterations) is not int or iterations <= 0:
+        raise ValueError("algorithm.num_iterations must be a positive integer")
     for value in [a["group_size"], a["retained_groups"], a["candidate_groups_per_batch"],
                   a["max_generation_batches"], t["max_steps"], t["save_steps"], a["logprob_chunk_tokens"]]:
         if type(value) is not int or value <= 0:
             raise ValueError("Batch sizes, retry limits and step counts must be positive integers")
+    if t["max_steps"] % iterations or t["save_steps"] % iterations:
+        raise ValueError("max_steps and save_steps must end on a complete rollout reuse cycle")
     if a["group_size"] < 2 or not 0 <= a["soft_length_limit"] < a["max_completion_length"]:
         raise ValueError("Invalid group size or length penalty interval")
     if config["data"]["max_prompt_tokens"] + a["max_completion_length"] > r["max_model_len"]:
@@ -34,7 +40,7 @@ def load_config(path, smoke=False):
             or a["temperature"] != 1 or a["top_p"] != 1):
         raise ValueError("This tested DAPO path requires token loss, group scaling, no KL, unmasked shaping, microbatch 1, T=top_p=1")
     if not re.fullmatch(r"[a-f0-9]{40}", config["model"]["revision"]):
-        raise ValueError("Pin the original EXAONE revision")
+        raise ValueError("Pin the model revision to a full commit hash")
     if not t["bf16"] or t["fp16"] or r["tensor_parallel_size"] != 1:
         raise ValueError("This experiment uses one GPU and BF16 compute")
     return config
@@ -45,6 +51,8 @@ def select_model(config, kind, sft_root):
         return config["model"]["repo"], {"kind": "base", **config["model"]}
     if kind != "sft":
         raise ValueError("MODEL_KIND must be 'base' or 'sft'")
+    if "sft" not in config:
+        raise ValueError("This config starts from the instruction model; no SFT source is configured")
     path = Path(sft_root) / config["sft"]["relative_checkpoint"]
     marker = json.loads((path / "stage1_checkpoint.json").read_text())
     if marker["epoch"] != config["sft"]["epoch"]:
@@ -98,7 +106,7 @@ def prepare_data(rows, ids, tokenizer, config):
         answer = str(row["solution"]).strip()
         if not re.fullmatch(r"[+-]?\d+", answer):
             raise ValueError(f"Expected a final integer answer in DAPO/{identifier}")
-        prompt = render_prompt(tokenizer, problem)
+        prompt = training_prompt(tokenizer, problem, config)
         token_ids = tokenizer.encode(prompt, add_special_tokens=False)
         if len(token_ids) > config["data"]["max_prompt_tokens"]:
             dropped.append({"id": identifier, "prompt_tokens": len(token_ids)})
@@ -111,6 +119,8 @@ def prepare_data(rows, ids, tokenizer, config):
               "dropped_prompts": dropped, "truncation_applied": False, "prepared_digest": digest(prepared),
               "min_prompt_tokens": min(len(r["prompt_token_ids"]) for r in prepared),
               "max_prompt_tokens": max(len(r["prompt_token_ids"]) for r in prepared)}
+    if "prompt_template_kwargs" in config:
+        report["prompt_template_kwargs"] = deepcopy(config["prompt_template_kwargs"])
     return prepared, report
 
 

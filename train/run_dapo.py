@@ -1,4 +1,4 @@
-"""EXAONE DAPO pilot from the original instruction model or original SFT epoch 5."""
+"""Single-GPU DAPO from a pinned instruction model or configured SFT checkpoint."""
 
 import argparse
 import importlib.metadata
@@ -16,6 +16,7 @@ import yaml  # noqa: E402
 from common.io import digest, read_jsonl, write_json, write_jsonl  # noqa: E402
 from eval.run_english_eval import git_identity  # noqa: E402
 from train.dapo_data import load_config, load_data, prepare_data, select_model  # noqa: E402
+from train.dapo_model import configure_tokenizer, stop_token_ids  # noqa: E402
 from train.dapo_resume import (  # noqa: E402
     check_checkpoint,
     check_extension_runtime,
@@ -53,7 +54,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True)
     parser.add_argument("--model-kind", choices=["base", "sft"], required=True)
-    parser.add_argument("--sft-root", required=True)
+    parser.add_argument("--sft-root", default="", help="Required only for the EXAONE SFT source")
     parser.add_argument("--output-root", required=True)
     parser.add_argument("--work-dir", required=True, help="Local SSD directory for rollout weight transfer")
     parser.add_argument("--prepare-only", action="store_true")
@@ -77,8 +78,10 @@ def main():
     if args.extend_from_checkpoint:
         parent_manifest, continuation = extension_source(config, args.extend_from_checkpoint, root)
     resume_checkpoint = args.resume_from_checkpoint or args.extend_from_checkpoint
-    if args.resume_from_checkpoint:
-        check_checkpoint(args.resume_from_checkpoint)
+    if resume_checkpoint:
+        marker, _ = check_checkpoint(resume_checkpoint)
+        if marker["global_step"] % config["algorithm"].get("num_iterations", 1):
+            raise ValueError("Resume must start at a complete rollout reuse cycle boundary")
     source, source_identity = select_model(config, args.model_kind, args.sft_root)
     # Keep the original resolved dataset revision on resume, even if HF main moved.
     previous_manifest = log_dir / "run_manifest.json"
@@ -92,14 +95,15 @@ def main():
     revision = config["model"]["revision"] if args.model_kind == "base" else None
     tokenizer = AutoTokenizer.from_pretrained(args.local_tokenizer or resume_checkpoint or source,
                                               revision=None if resume_checkpoint else revision,
-                                              trust_remote_code=True, token=token)
-    if tokenizer.eos_token_id is None or tokenizer.pad_token_id is None:
-        raise ValueError("Use the unmodified EXAONE tokenizer with native EOS and padding")
-    tokenizer.padding_side = "left"
+                                              trust_remote_code=config["model"]["trust_remote_code"], token=token)
+    configure_tokenizer(tokenizer, config)
+    generation_stops = stop_token_ids(tokenizer, config)
     rows, ids = load_data(config, token=token, local_data=args.local_data)
     prepared, report = prepare_data(rows, ids, tokenizer, config)
     original_tokenizer = tokenizer_identity(tokenizer)
     report["tokenizer"] = original_tokenizer
+    if generation_stops is not None:
+        report["generation_stop_token_ids"] = generation_stops
     print(json.dumps({"model": source_identity, "data": report, "algorithm": config["algorithm"]}, indent=2), flush=True)
     print("FIRST FORMATTED PROMPT\n" + prepared[0]["prompt"], flush=True)
     print("Checkpoints:", checkpoints, "\nLogs:", log_dir, flush=True)
@@ -143,14 +147,20 @@ def main():
     status = "failed"
     torch.cuda.reset_peak_memory_stats()
     try:
-        model = AutoModelForCausalLM.from_pretrained(source, trust_remote_code=True,
+        model = AutoModelForCausalLM.from_pretrained(source, trust_remote_code=config["model"]["trust_remote_code"],
                     torch_dtype=torch.float32, attn_implementation="sdpa", token=token)
         model.config.use_cache = False
         if not all(p.requires_grad for p in model.parameters()):
-            raise ValueError("DAPO must update the full EXAONE model")
+            raise ValueError("DAPO must update the full model")
+        if generation_stops is not None:
+            # Preserve all native stop IDs in saved checkpoints, including EOT.
+            model.config.eos_token_id = tokenizer.eos_token_id
+            model.config.pad_token_id = tokenizer.pad_token_id
+            model.generation_config.eos_token_id = generation_stops
+            model.generation_config.pad_token_id = tokenizer.pad_token_id
         # Initialize rollout before Trainer moves the FP32 training copy to GPU.
         # Sleep then frees the rollout GPU allocation during optimization.
-        rollout = VLLMRollout(source, config, args.work_dir)
+        rollout = VLLMRollout(source, config, args.work_dir, tokenizer=tokenizer)
         trainer = DAPOTrainer(model=model, args=make_arguments(config, checkpoints, log_dir),
             processing_class=tokenizer, train_dataset=Dataset.from_list(prepared),
             dapo_config=config, prepared_rows=prepared, rollout=rollout,

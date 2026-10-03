@@ -28,7 +28,7 @@ def make_arguments(config, checkpoint_dir, log_dir):
     return GRPOConfig(
         output_dir=str(checkpoint_dir), logging_dir=str(log_dir), **config["training"],
         gradient_accumulation_steps=count, steps_per_generation=count,
-        num_generations=a["group_size"], num_iterations=1,
+        num_generations=a["group_size"], num_iterations=a.get("num_iterations", 1),
         max_prompt_length=config["data"]["max_prompt_tokens"], max_completion_length=a["max_completion_length"],
         temperature=a["temperature"], top_p=a["top_p"], top_k=None, repetition_penalty=1.0,
         epsilon=a["epsilon"], epsilon_high=a["epsilon_high"], beta=a["beta"],
@@ -65,6 +65,7 @@ class DAPOTrainer(GRPOTrainer):
         self.cached_rollout = None
         self.rollout_stats = {}
         self.update_started = None
+        self.rollout_first_update = None
         super().__init__(*args, reward_funcs=recorded_rewards, **kwargs)
         if self.accelerator.num_processes != 1:
             raise ValueError("This DAPO runner supports exactly one process/GPU")
@@ -78,6 +79,7 @@ class DAPOTrainer(GRPOTrainer):
             raise ValueError(f"Expected one full update's {expected} rollout slots; received {len(inputs)}")
         self.update_started = time.perf_counter()
         step = self.state.global_step
+        self.rollout_first_update = step + 1
         self.rollout.sync(self.accelerator.unwrap_model(self.model))
 
         def record_batch(records, stats):
@@ -86,7 +88,8 @@ class DAPOTrainer(GRPOTrainer):
             write_json(directory / "sampling.json", stats)
 
         def progress(stats):
-            print(f"DAPO update {step + 1}: {stats['retained_groups']}/{self.dapo_config['algorithm']['retained_groups']} "
+            print(f"DAPO rollout for updates {step + 1}-{step + self.num_iterations}: "
+                  f"{stats['retained_groups']}/{self.dapo_config['algorithm']['retained_groups']} "
                   f"mixed groups retained from {stats['candidate_groups']} questions", flush=True)
 
         try:
@@ -104,6 +107,16 @@ class DAPOTrainer(GRPOTrainer):
             output = super()._generate_and_score_completions(selected_inputs)
         finally:
             self.cached_rollout = None
+        if self.dapo_config.get("generation"):
+            # TRL 0.24 recognizes only tokenizer.eos_token_id in these metrics.
+            # Llama also stops at end-of-text/end-of-message; trust vLLM's reason.
+            lengths = [len(r["token_ids"]) for r in selected if r["finish_reason"] == "stop"]
+            metrics = self._metrics["train"]
+            metrics["completions/clipped_ratio"][-1] = sum(
+                r["finish_reason"] == "length" for r in selected) / len(selected)
+            for name, value in {"mean": sum(lengths) / len(lengths) if lengths else 0,
+                                "min": min(lengths, default=0), "max": max(lengths, default=0)}.items():
+                metrics[f"completions/{name}_terminated_length"][-1] = value
         # DAPO divides every microbatch by the SAME total active token count.
         if int(output["completion_mask"].sum()) != int(output["num_items_in_batch"]):
             raise ValueError("DAPO accumulated-token denominator does not match the active completions")
@@ -156,14 +169,24 @@ class DAPOTrainer(GRPOTrainer):
                 if key not in logs or not math.isfinite(float(logs[key])):
                     raise FloatingPointError(f"Missing/nonfinite DAPO optimizer metric: {key}")
             seconds = time.perf_counter() - self.update_started
+            iteration = self.state.global_step - self.rollout_first_update + 1
+            fresh_tokens = self.rollout_stats["generated_tokens"] if iteration == 1 else 0
             record = {**logs, **self.rollout_stats, "step": self.state.global_step,
-                      "update_seconds": seconds, "generated_tokens_per_second": self.rollout_stats["generated_tokens"] / seconds}
+                      "rollout_first_update": self.rollout_first_update,
+                      "policy_iteration": iteration, "num_iterations": self.num_iterations,
+                      "reused_rollout": iteration > 1, "new_generated_tokens": fresh_tokens,
+                      "update_seconds": seconds, "generated_tokens_per_second": fresh_tokens / seconds}
             # Capture TRL entropy, clipping, shaped rewards and sampling mismatch metrics.
             record["policy_metrics"] = {k: sum(v) / len(v) for k, v in self._metrics["train"].items() if v}
             append_jsonl(self.log_dir / "steps.jsonl", record)
+            self.update_started = time.perf_counter()
         super().log(logs, start_time)
 
     def _save_checkpoint(self, model, trial):
+        # TRL does not serialize its cached rollouts/old log-probs. Save only after
+        # every configured pass; resume can then safely generate a fresh batch.
+        if self.state.global_step % self.num_iterations:
+            raise ValueError("Save checkpoints only after a complete rollout reuse cycle")
         destination = Path(self.args.output_dir) / f"checkpoint-{self.state.global_step}"
         if destination.exists():
             raise FileExistsError(f"Refusing to overwrite checkpoint: {destination}")

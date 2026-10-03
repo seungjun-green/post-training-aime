@@ -174,8 +174,20 @@ For the separate **EXAONE DAPO pilot**, see
 setting selects the original EXAONE model or the original `sft_s1k/epoch_5` checkpoint.
 Preparation, GPU smoke and the 100-update training pilot are separate cells; all run outputs
 are saved to Drive. Push the new implementation to GitHub main before Colab setup.
+The notebook now uses `configs/dapo_reuse.yaml`: two optimizer updates per generated batch,
+with fixed old-policy probabilities, and a two-update smoke. It defaults to the base model
+and saves the fresh experiment under `LG-AIME-DAPO-Reuse2`. The 100-update budget therefore
+uses 50 fresh rollout batches. Other training hyperparameters are unchanged.
 
-After completing step 100, use
+For **Llama 3.2 3B Instruct DAPO**, use
+[`train_dapo_llama32_3b.ipynb`](notebooks/train_dapo_llama32_3b.ipynb), with
+`configs/dapo_llama32_3b.yaml`. It starts from the pinned instruction model, uses full-parameter
+training and the same two-update rollout schedule, and saves under
+`LG-AIME-DAPO-Llama32-3B`. Preparation, two-update GPU smoke and full training are separate cells.
+The native Llama template has a fixed date, and all three native stop tokens are configured.
+Use an HF token with access to the gated model. No EXAONE/SFT files are needed.
+
+For the **original one-pass run**, after completing step 100, use
 [`continue_dapo_exaone_100_to_300.ipynb`](notebooks/continue_dapo_exaone_100_to_300.ipynb)
 to restore the full training state and add 200 updates. It defaults to the base-model run,
 preserves original outputs, and writes steps 101–300 under `LG-AIME-DAPO-100to300` on Drive.
@@ -185,6 +197,11 @@ benchmarks, one answer each, default temperature 0, editable sampling and no bud
 For the **temperature-0 base vs DAPO-100 comparison on AMC 2023 and MATH-500 only**, use
 [`compare_base_dapo100_amc_math.ipynb`](notebooks/compare_base_dapo100_amc_math.ipynb).
 It evaluates 540 problems per model sequentially and displays/saves an accuracy and response-length table.
+To evaluate **checkpoint 140 alone** from the continuation run on those same two benchmarks,
+use [`evaluate_dapo_checkpoint140_amc_math.ipynb`](notebooks/evaluate_dapo_checkpoint140_amc_math.ipynb).
+It defaults to `LG-AIME-DAPO-100to300/checkpoints/dapo_exaone_base/checkpoint-140`,
+temperature 0, one answer per problem and no budget forcing. Its 540-answer run writes a
+two-row summary to `LG-AIME-DAPO-Eval-140-AMC-MATH-temp0` without rerunning the baseline.
 
 ## English preparation notebook (current)
 

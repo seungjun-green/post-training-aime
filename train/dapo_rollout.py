@@ -13,12 +13,16 @@ class DAPOWeightSyncWorker:
 
 
 class VLLMRollout:
-    def __init__(self, source, config, work_dir):
+    def __init__(self, source, config, work_dir, tokenizer=None):
         from vllm import LLM
+
+        from train.dapo_model import stop_token_ids
         self.config = config
+        self.stop_ids = stop_token_ids(tokenizer, config) if config.get("generation") else None
         self.work_dir = Path(work_dir)
         self.work_dir.mkdir(parents=True, exist_ok=True)
-        self.llm = LLM(model=str(source), tokenizer=str(source), trust_remote_code=True,
+        self.llm = LLM(model=str(source), tokenizer=str(source),
+                       trust_remote_code=config["model"]["trust_remote_code"],
                        generation_config="vllm", seed=config["training"]["seed"],
                        worker_extension_cls="train.dapo_rollout.DAPOWeightSyncWorker",
                        logprobs_mode="processed_logprobs", **config["rollout"])
@@ -57,7 +61,8 @@ class VLLMRollout:
                 prompts.append({"prompt_token_ids": question["prompt_token_ids"]})
                 params.append(SamplingParams(n=1, temperature=a["temperature"], top_p=a["top_p"],
                                              top_k=-1, max_tokens=a["max_completion_length"],
-                                             logprobs=0, seed=seed))
+                                             logprobs=0, seed=seed,
+                                             **({"stop_token_ids": self.stop_ids} if self.stop_ids else {})))
         outputs = self.llm.generate(prompts, sampling_params=params, use_tqdm=True)
         if len(outputs) != len(prompts):
             raise ValueError("Missing vLLM requests")

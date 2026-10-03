@@ -144,3 +144,30 @@ optimizer/scheduler/RNG state and extends the same settings to a total of 300 up
 outputs are isolated in `LG-AIME-DAPO-100to300`; the original run is preserved. Only the total
 step budget changes, with the constant-after-warmup schedule retained. CPU tests verify that
 a completed run can be extended without resetting optimizer state or step numbering.
+
+### Rollout reuse follow-up
+
+The original one-pass setup evaluates the policy loss before any update to each generated
+batch, so the PPO ratio is approximately one and asymmetric clipping normally does not
+engage. This is a schedule limitation, not a missing clamp in the loss. The training notebook
+now uses `configs/dapo_reuse.yaml`, with two optimizer updates per generated batch and fixed
+generation-time old-policy log-probabilities/advantages across both passes. Other training
+hyperparameters are retained; 100 optimizer updates now mean 50 fresh rollout batches.
+The default starting model is base and the output root is `LG-AIME-DAPO-Reuse2`.
+The original configs and 100-to-300 continuation retain one-pass behavior for reproducibility.
+
+Smoke now runs two updates. Checkpoints are allowed only at complete reuse-cycle boundaries
+because TRL does not serialize cached rollouts. Logs identify the rollout's first update,
+policy iteration and freshly generated token count. A zero clip fraction is still possible
+when a policy update is small; inducing nonzero clipping is not itself an optimization goal.
+This change is an experiment, not an established explanation or cure for the benchmark drop.
+
+### Llama 3.2 3B DAPO experiment
+
+`notebooks/train_dapo_llama32_3b.ipynb` starts full-parameter DAPO from the pinned
+`meta-llama/Llama-3.2-3B-Instruct` checkpoint with the two-pass rollout schedule. Algorithm,
+data and training settings match the EXAONE reuse experiment. It uses native Llama formatting,
+a fixed template date and explicit native stop tokens, with separate preparation, smoke and
+full-run cells. Outputs are isolated in `LG-AIME-DAPO-Llama32-3B` on Drive. Local tests exercise
+a small tied-embedding Llama model, clipping, termination accounting and exact resume;
+full-size GPU smoke and benchmark results are pending. No evaluation protocol was changed.

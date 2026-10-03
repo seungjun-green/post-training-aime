@@ -11,9 +11,10 @@ def cells():
         the original DeepSeek-column SFT epoch 5. This is the EXAONE experiment, not Llama
         or the Pro-column SFT. Both choices share the same English prompt and DAPO settings.
 
-        This notebook runs the agreed **100-optimizer-update pilot**. It does not mean 100
+        This notebook runs a **100-optimizer-update pilot with rollout reuse**. It does not mean 100
         dataset epochs or a complete pass through every question. Default settings:
-        G=8, 16 retained mixed-correctness questions (128 responses) per update, microbatch 1,
+        G=8, 16 retained mixed-correctness questions (128 responses) per rollout, microbatch 1,
+        **two optimizer updates per rollout** (50 fresh rollouts in 100 updates),
         LR 1e-6, 20-step linear warmup then constant LR, T=1/top-p=1, clip 0.20/0.28,
         token-level loss, group-normalized shaped rewards, no KL and no learned reward model.
         Full responses may use 20,480 tokens. A soft penalty starts at 16,384 and reaches -1
@@ -30,22 +31,23 @@ def cells():
         and optimizer state so small RL updates are not lost to BF16 rounding. Training and
         rollout share one GPU; vLLM sleeps during optimization and runs up to 16 sequences
         concurrently during generation. Updated weights transfer through a temporary local-SSD
-        snapshot before each update's rollout. GPU compatibility and memory require the smoke test.
+        snapshot before each fresh rollout. GPU compatibility and memory require the smoke test.
 
         Outputs go to Drive. Five full resumable checkpoints plus a smoke checkpoint can require
         approximately **200 GB**; they include model and optimizer state. This notebook performs
         training and reward checks, not benchmark evaluation. All hyperparameters are in
-        `configs/dapo.yaml`. Settings below are plain Python variables.
+        `configs/dapo_reuse.yaml`. The original one-pass configs and 100-to-300 continuation
+        notebook remain available for existing runs. Settings below are plain Python variables.
         """),
         code("""
-        MODEL_KIND = "sft"  # "base" or "sft"
+        MODEL_KIND = "base"  # "base" or "sft"
         SFT_ROOT = "/content/drive/MyDrive/LG-AIME-Stage1"
-        OUTPUT_ROOT = "/content/drive/MyDrive/LG-AIME-DAPO"
+        OUTPUT_ROOT = "/content/drive/MyDrive/LG-AIME-DAPO-Reuse2"
         REPO_URL = "https://github.com/seungjun-green/post-training-aime.git"
         CODE_ROOT = "/content/lg-aime-dapo"
         RL_ENV = "/content/lg-dapo-env"
         WORK_DIR = "/content/lg-dapo-work"
-        CONFIG = "configs/dapo.yaml"
+        CONFIG = "configs/dapo_reuse.yaml"
         """),
         markdown("""
         ## Setup
@@ -110,11 +112,14 @@ def cells():
                    log_path=run_logs / "prepare_console.log")
         """),
         markdown("""
-        ## GPU smoke test — one real DAPO update
+        ## GPU smoke test — two updates on one rollout
         Enable RUN_SMOKE. Smoke uses G=8 and the full 20,480-token limit, retaining two mixed
-        groups for one update. Warmup is disabled for this single step so the learning rate
+        groups for two updates. Warmup is disabled for these steps so the learning rate
         is nonzero. It checks generation, rule scoring, refill, backward/optimizer
-        update and saving a resumable checkpoint. Each attempt has its own timestamped folder.
+        updates, reuse of fixed old-policy probabilities and saving a resumable checkpoint.
+        In steps.jsonl, policy_iteration should be 1 then 2; the second step should have
+        reused_rollout=true and new_generated_tokens=0. Clipping can still be zero if the
+        policy changes too little to cross 0.8/1.28; nonzero clipping is not a smoke requirement. Each attempt has its own timestamped folder.
         Smoke is not a benchmark and its weights are never used to initialize the full run.
         If too few mixed groups are found, inspect its saved rollouts; do not treat the stopped
         smoke as a successful update. The generated-token and acceptance logs explain its cost.
@@ -130,13 +135,17 @@ def cells():
                        compact_progress=True)
             print("Smoke results:", smoke_root)
         else:
-            print("Smoke is off. Set RUN_SMOKE = True to test one DAPO update.")
+            print("Smoke is off. Set RUN_SMOKE = True to test two DAPO updates on one rollout.")
         """),
         markdown("""
         ## Train the 100-update pilot
         Enable RUN_TRAINING after preparation and smoke. Saves checkpoints at updates
-        20, 40, 60, 80 and 100. Every update uses fresh policy rollouts and a new seeded candidate
-        order. Dynamic sampling may generate more than 128 responses to obtain 16 mixed groups.
+        20, 40, 60, 80 and 100. Each fresh rollout is used for two optimizer updates with
+        fixed old-policy log-probabilities and advantages. Then updated weights generate the next
+        rollout. Dynamic sampling may generate more than 128 responses to obtain 16 mixed groups.
+        max_steps and save_steps must be multiples of num_iterations, so every saved checkpoint
+        finishes a complete reuse cycle. This starts a fresh experiment from base/SFT; do not use
+        the original one-pass checkpoint with RESUME_CHECKPOINT.
 
         To resume, set RESUME_CHECKPOINT to the latest completed `checkpoint-<step>` folder.
         Keep code, config, source and runtime unchanged. Work after the last saved checkpoint
@@ -161,6 +170,8 @@ def cells():
           scheduler, RNG, Trainer state and completion marker.
         - `logs/<run>/steps.jsonl`: policy loss, reward/entropy/clipping metrics,
           accuracy and acceptance counts, truncation counts, generated tokens and update duration.
+          Rollout statistics repeat on reused steps; count new_generated_tokens for fresh generation.
+          policy_iteration and rollout_first_update identify the pass and source rollout.
         - `logs/<run>/rollouts/attempt_*/update_*/`: generated text, extracted answers,
           correctness, length penalties and retained/rejected group records.
         - `logs/<run>/`: console output, resolved config, data report, run manifest and
