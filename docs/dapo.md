@@ -133,3 +133,21 @@ has finished. Results are written below
 The summary is `dapo_exaone_base_checkpoint100.json`; raw answers use `_generations.jsonl`,
 and `_problems.jsonl` supports interruption recovery with unchanged code/model/settings.
 Console logs are under the same profile's `logs/`. Use matching settings for baseline comparisons.
+
+## Base vs checkpoint 100 on AMC and MATH only
+
+`notebooks/compare_base_dapo100_amc_math.ipynb` evaluates the pinned original EXAONE model
+and `dapo_exaone_base/checkpoint-100` sequentially with temperature 0, top-p 1, one answer,
+the shared 20,480-token cap and no budget forcing. `configs/dapo_compare_eval.yaml` selects
+AMC 2023 (40 problems) and MATH-500 (500). AIME 2024/2025/2026 are excluded before loading.
+The separate `eval.run_amc_math_eval` entry point reuses the existing dataset checks, prompts,
+batched generation, scoring and resume journal without modifying the full evaluator.
+
+Optional smoke generates two answers per model in an isolated folder. Full evaluation
+generates 540 per model and automatically displays a two-row table with accuracy percentages,
+DAPO-minus-base differences in percentage points and average token lengths. The table rejects
+incomplete, smoke or mismatched-protocol results. Default Drive folder:
+`LG-AIME-DAPO-Compare-100-AMC-MATH-temp0`. Summaries and raw answers are under `full/results/`,
+the table is saved as `full/comparison.json`, and console output is under `logs/`.
+No weights are copied or saved. Tests cover excluded datasets, greedy settings, shared-scoring
+execution/resume, model selection and comparison arithmetic. Actual model evaluation runs in Colab.

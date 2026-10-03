@@ -182,6 +182,9 @@ preserves original outputs, and writes steps 101–300 under `LG-AIME-DAPO-100to
 Evaluate the original run's checkpoint 100 with
 [`evaluate_dapo_checkpoint100.ipynb`](notebooks/evaluate_dapo_checkpoint100.ipynb): all five
 benchmarks, one answer each, default temperature 0, editable sampling and no budget forcing.
+For the **temperature-0 base vs DAPO-100 comparison on AMC 2023 and MATH-500 only**, use
+[`compare_base_dapo100_amc_math.ipynb`](notebooks/compare_base_dapo100_amc_math.ipynb).
+It evaluates 540 problems per model sequentially and displays/saves an accuracy and response-length table.
 
 ## English preparation notebook (current)
 

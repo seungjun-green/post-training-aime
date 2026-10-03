@@ -1,0 +1,9 @@
+checkpoint_step: 100
+base_model:
+  repo: LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct
+  revision: e949c91dec92095908d34e6b560af77dd0c993f8
+benchmarks: [amc23, math_500]
+profile: greedy
+evaluation_config: configs/eval_english.yaml
+suite: configs/english_eval_suite.json
+execution_config: configs/eval_execution.yaml
