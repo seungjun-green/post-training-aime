@@ -168,6 +168,13 @@ GPU training and Stage 1 accuracy results are still pending.
 
 ## DAPO pilot
 
+For the completed **fresh minibatch run's checkpoint 300**, use
+[`evaluate_dapo_checkpoint300_amc_math.ipynb`](notebooks/evaluate_dapo_checkpoint300_amc_math.ipynb).
+It defaults to `LG-AIME-DAPO-MiniBatch300/checkpoints/dapo_exaone_base/checkpoint-300`
+and evaluates AMC 2023 + MATH-500 only (540 problems), temperature 0, one answer per problem,
+20,480-token cap and no budget forcing. Optional smoke and full evaluation are separate cells.
+The summary table and raw answers go to `LG-AIME-DAPO-MiniBatch300-Eval-AMC-MATH-temp0`.
+
 For the separate **EXAONE DAPO pilot**, see
 [`train_dapo_exaone.ipynb`](notebooks/train_dapo_exaone.ipynb) and
 [the DAPO run guide](docs/dapo.md). Its plain `MODEL_KIND = "base"` / `"sft"`

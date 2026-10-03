@@ -1,5 +1,27 @@
 # EXAONE DAPO pilot
 
+## Evaluate the completed minibatch run at checkpoint 300
+
+Open `notebooks/evaluate_dapo_checkpoint300_amc_math.ipynb` with
+`configs/dapo_eval_300_amc_math.yaml`. Default checkpoint:
+`/content/drive/MyDrive/LG-AIME-DAPO-MiniBatch300/checkpoints/dapo_exaone_base/checkpoint-300`.
+This selects the fresh base-started minibatch run, not the earlier 100-to-300 continuation.
+It evaluates AMC 2023 (40) and MATH-500 (500) only, using the existing batched evaluator,
+temperature 0, top-p 1, seed 42, one answer per problem, response cap 20,480, no budget forcing.
+No baseline run or optimizer state is required. The optional smoke evaluates two problems.
+
+Output root: `/content/drive/MyDrive/LG-AIME-DAPO-MiniBatch300-Eval-AMC-MATH-temp0`.
+Summary: `full/results/dapo_checkpoint300.json`; raw answers:
+`full/results/dapo_checkpoint300_generations.jsonl`; resumable per-problem journal:
+`full/results/dapo_checkpoint300_problems.jsonl`. The two-row results table is saved as
+`full/summary_table.json` and console output is under `logs/`. Inference reads checkpoint
+weights without copying or saving them. The notebook validates completed checkpoint identity
+and displays correct counts, accuracy and mean response length after the full run. Local
+tests exercise model selection, subset/settings, smoke/full commands and table validation;
+actual GPU evaluation runs in Colab. No evaluator implementation changed.
+
+## Training notebooks
+
 Open `notebooks/train_dapo_exaone.ipynb` in Colab on the RTX PRO 6000 Blackwell 96GB.
 Settings are plain Python variables. `MODEL_KIND = "base"` starts from the pinned original
 `LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct`; `"sft"` starts from
