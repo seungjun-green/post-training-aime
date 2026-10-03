@@ -166,6 +166,15 @@ batching and separate profile results. See [`eval_profiles.yaml`](configs/eval_p
 and the [migration instructions](docs/stage1_sft.md#colab).
 GPU training and Stage 1 accuracy results are still pending.
 
+## DAPO pilot
+
+For the separate **EXAONE DAPO pilot**, see
+[`train_dapo_exaone.ipynb`](notebooks/train_dapo_exaone.ipynb) and
+[the DAPO run guide](docs/dapo.md). Its plain `MODEL_KIND = "base"` / `"sft"`
+setting selects the original EXAONE model or the original `sft_s1k/epoch_5` checkpoint.
+Preparation, GPU smoke and the 100-update training pilot are separate cells; all run outputs
+are saved to Drive. Push the new implementation to GitHub main before Colab setup.
+
 ## English preparation notebook (current)
 
 Upload [`notebooks/prepare_english_datasets.ipynb`](notebooks/prepare_english_datasets.ipynb) to **Colab CPU**, add a write-capable `HF_TOKEN`, and run the cells in order. It applies the existing normalization-v2, 8-gram, 70% per-eval-problem coverage rule to the two training datasets. It does not deduplicate within/between training datasets. All five eval sets remain unchanged, as do every retained original column and text value.

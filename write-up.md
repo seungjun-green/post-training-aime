@@ -116,3 +116,23 @@ Evaluation logic lives in the project rather than the notebook. The preparation 
 Stage 1 code is implemented, with settings and execution instructions in the [run guide](docs/stage1_sft.md). CPU preparation using the actual pinned EXAONE tokenizer drops 21 examples exceeding 20,480 tokens and keeps 975, resulting in 61 optimizer steps per epoch and 305 total. The original 996 rows contain 370 `deepseek_grade`-incorrect examples; this grade does not filter training. The [data report](docs/stage1_data_report.json) records the exact dropped IDs and token-length statistics.
 
 Next is GPU validation and fine-tuning, followed by evaluation with the same datasets, prompts, sampling settings, scoring, and runtime. The continuous-batching runner supplies all five benchmarks for each selected epoch. The greedy profile queues up to 64 problems, and sample8 queues up to 16, for the existing 32 GPU response slots. Prompts, seeds, token limits and scoring remain shared. Profiles use isolated `profiles/<profile>/` directories and allow either model to run first, with matching settings required for comparisons; old 32-sample results are preserved without importing them. Settings are recorded in manifests; exact outputs may still vary with GPU numerics and batching. CPU tests cover scoring equivalence on identical responses, out-of-order completion, interruption recovery and source validation; GPU throughput has not yet been measured. Preserve the stage-0 archive and its parent protocol/runtime manifests for comparisons; no fine-tuned results are reported yet.
+
+
+## EXAONE DAPO pilot implementation
+
+`notebooks/train_dapo_exaone.ipynb` now selects the original EXAONE instruction model
+or original `sft_s1k/epoch_5` with a plain `MODEL_KIND` string. The separate DAPO path uses
+the decontaminated English Math-17K export, G=8, 16 retained mixed-correctness groups per
+update, token-normalized policy loss, asymmetric clipping 0.20/0.28, and a soft length penalty
+from 16,384 to 20,480 tokens. It runs the agreed 100-update pilot at LR 1e-6 (20-update warmup),
+saving full checkpoints every 20 updates and raw rollout/reward/filtering diagnostics to Drive.
+No learned reward model, KL reference model, or evaluation-time budget forcing is used.
+
+The TRL-based trainer uses a custom colocated vLLM path with explicit policy synchronization
+and sleep during optimization. FP32 master parameters/Adam state preserve small updates;
+computation and rollout weights use BF16. The notebook separates preparation, a one-update
+GPU smoke, and the full pilot. Local preparation with the actual EXAONE tokenizer retained
+all 14,068 decontaminated questions (52–1,662 prompt tokens). CPU tests cover reward shaping,
+dynamic refill, clipping/token normalization, training, checkpoint reload and resume.
+Actual vLLM/GPU execution remains a Colab smoke check; no DAPO benchmark gains are claimed.
+See [the run guide](docs/dapo.md) for outputs, storage requirements and runtime details.
