@@ -179,6 +179,9 @@ After completing step 100, use
 [`continue_dapo_exaone_100_to_300.ipynb`](notebooks/continue_dapo_exaone_100_to_300.ipynb)
 to restore the full training state and add 200 updates. It defaults to the base-model run,
 preserves original outputs, and writes steps 101–300 under `LG-AIME-DAPO-100to300` on Drive.
+Evaluate the original run's checkpoint 100 with
+[`evaluate_dapo_checkpoint100.ipynb`](notebooks/evaluate_dapo_checkpoint100.ipynb): all five
+benchmarks, one answer each, default temperature 0, editable sampling and no budget forcing.
 
 ## English preparation notebook (current)
 

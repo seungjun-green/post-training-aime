@@ -6,16 +6,18 @@ from copy import deepcopy
 from pathlib import Path
 
 
-def check_checkpoint(path):
+def check_checkpoint(path, *, require_training_state=True):
     """Check completion/state files and shard sizes without loading model weights."""
     path = Path(path).resolve()
-    for name in ["dapo_checkpoint.json", "trainer_state.json", "optimizer.pt", "scheduler.pt",
-                 "rng_state.pth", "config.json", "tokenizer_config.json"]:
+    required = ["dapo_checkpoint.json", "config.json", "tokenizer_config.json"]
+    if require_training_state:
+        required += ["trainer_state.json", "optimizer.pt", "scheduler.pt", "rng_state.pth"]
+    for name in required:
         if not (path / name).is_file() or (path / name).stat().st_size == 0:
             raise FileNotFoundError(f"Incomplete resumable checkpoint: {path / name}")
     marker = json.loads((path / "dapo_checkpoint.json").read_text())
-    state = json.loads((path / "trainer_state.json").read_text())
-    if marker["global_step"] != state["global_step"] or path.name != f"checkpoint-{state['global_step']}":
+    state = json.loads((path / "trainer_state.json").read_text()) if require_training_state else None
+    if (state and marker["global_step"] != state["global_step"]) or path.name != f"checkpoint-{marker['global_step']}":
         raise ValueError("Checkpoint marker, folder and Trainer step disagree")
     index = path / "model.safetensors.index.json"
     shards = set(json.loads(index.read_text())["weight_map"].values()) if index.exists() else {"model.safetensors"}

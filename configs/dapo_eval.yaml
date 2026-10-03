@@ -1,0 +1,8 @@
+checkpoint_step: 100
+profile: sample1
+sampling:
+  temperature: 0.0
+  top_p: 1.0
+evaluation_config: configs/eval_english.yaml
+suite: configs/english_eval_suite.json
+execution_config: configs/eval_execution.yaml

@@ -114,3 +114,22 @@ training. If no continuation checkpoint has completed after a failed attempt, se
 OUTPUT_ROOT. Local tests verify extension from a finished run, restored optimizer step counts
 and learning rate, rejection of changed hyperparameters, incomplete checkpoint detection,
 and notebook commands. The full 200-update continuation must run on the user's GPU.
+
+## Evaluate checkpoint 100
+
+`notebooks/evaluate_dapo_checkpoint100.ipynb` loads the completed original DAPO checkpoint
+from `LG-AIME-DAPO/checkpoints/dapo_exaone_base/checkpoint-100/` by default. `MODEL_KIND`
+selects which trained DAPO run to evaluate (`base` or `sft`), not the untrained starting model.
+`configs/dapo_eval.yaml` selects the existing single-answer profile and English suite/runtime.
+The notebook reuses `eval.run_batched_eval` unchanged for AIME 2024/2025/2026, AMC 2023 and
+MATH-500: 630 problems in total. Default temperature/top-p are 0/1, the response cap is
+20,480, and budget forcing is off. Sampling can be edited as plain variables and is recorded
+in YAML; temperature/top-p combinations have isolated output directories.
+
+Optional smoke evaluates five problems and full evaluation covers all 630. Neither saves
+weights or needs optimizer state or a completed baseline. Run on a free GPU after training
+has finished. Results are written below
+`LG-AIME-DAPO/evaluation_checkpoint100/profiles/sample1/temperature_0.0_top_p_1.0/full/results/dapo/`.
+The summary is `dapo_exaone_base_checkpoint100.json`; raw answers use `_generations.jsonl`,
+and `_problems.jsonl` supports interruption recovery with unchanged code/model/settings.
+Console logs are under the same profile's `logs/`. Use matching settings for baseline comparisons.
