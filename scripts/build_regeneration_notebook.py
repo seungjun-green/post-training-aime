@@ -28,6 +28,7 @@ def cells():
         and Exploration**, followed by the final answer. Evaluation contains the full worked
         derivation; the other sections explain the method and problem-specific checks. No length
         target is requested, and mistakes or alternatives must not be fabricated.
+        Here "answer" means the API's final `content` field, not a literal `<answer>` wrapper.
         There is **no answer-correctness filter**.
 
         **The intended new training target is `deepseek-v4-pro_answer`: the complete structured
@@ -42,7 +43,7 @@ def cells():
         2. Run **Smoke test** for 20 reproducibly random examples and download the five-column CSV.
         3. Use the separate **Full run** cell to generate the entire dataset, reusing completed rows.
 
-        A default **Run all** runs the paid smoke test only; the full-run checkbox starts off.
+        A default **Run all** runs the paid smoke test only; `RUN_FULL_GENERATION` starts false.
         Both modes save each completed response immediately to Google Drive. Rerun a cell after
         interruption to resume; unsuccessful rows are attempted again, completed rows are reused.
         Use only **one notebook/runtime at a time** for the same output folder.
@@ -137,7 +138,7 @@ def cells():
         markdown("""
         ## Full run — all 996 rows, preserving original columns
 
-        Enable the checkbox below to run. There is no baseline-evaluation or smoke-completion gate.
+        Set `RUN_FULL_GENERATION = True` below to run. There is no baseline-evaluation or smoke-completion gate.
         Matching completed smoke results are reused automatically. After a runtime restart, run
         setup/settings/source-loading, then this cell directly to resume.
 
@@ -157,7 +158,7 @@ def cells():
         """),
         code("""
         # @title Full run: generate all rows (completed smoke rows are reused)
-        RUN_FULL_GENERATION = False # @param {type:"boolean"}
+        RUN_FULL_GENERATION = False
         if RUN_FULL_GENERATION:
             full_indices = list(range(len(source_rows)))
             try:

@@ -4,6 +4,8 @@ import copy
 import csv
 import io
 import json
+import subprocess
+import sys
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -274,6 +276,7 @@ def test_notebook_compiles_bundle_current_and_full_run_defaults_off():
             continue
         compile(cell.source, f"cell-{i}", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
         assert cell.execution_count is None and cell.outputs == []
+        assert "@param" not in cell.source
         if 'run.export(run.smoke_indices, "smoke")' in cell.source:
             smoke_cell = i
         if "RUN_FULL_GENERATION = False" in cell.source:
@@ -331,3 +334,61 @@ async def test_notebook_smoke_and_full_cells_execute_with_mock_api(
     await eval(compile(enabled, "full-on", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT), namespace)
     assert len(calls) == 24 and namespace["full_result"]["summary"]["remaining"] == 0
     assert namespace["full_result"]["path"].is_file()
+
+
+def test_notebook_bundle_runs_in_isolation(source, config, tmp_path):
+    """Catch missing bundled dependencies even when repository tests pass."""
+    notebook = nbformat.read("notebooks/regenerate_s1_deepseek.ipynb", as_version=4)
+    for cell in notebook.cells:
+        if cell.cell_type != "code":
+            continue
+        for node in ast.parse(cell.source).body:
+            if isinstance(node, ast.Assign) and any(
+                isinstance(target, ast.Name) and target.id == "BUNDLE" for target in node.targets
+            ):
+                with ZipFile(io.BytesIO(base64.b64decode(ast.literal_eval(node.value)))) as archive:
+                    archive.extractall(tmp_path / "bundle")
+    (tmp_path / "fixture.json").write_text(json.dumps({"rows": source, "config": config,
+                                                     "answer": STRUCTURED_ANSWER}))
+    script = '''
+import asyncio, csv, json, sys
+from pathlib import Path
+import httpx, yaml
+root = Path(sys.argv[1])
+sys.path.insert(0, str(root / "bundle"))
+from pipeline import regenerate_s1 as regeneration
+from common import io
+assert Path(regeneration.__file__).parent == root / "bundle/pipeline"
+assert Path(io.__file__).parent == root / "bundle/common"
+fixture = json.loads((root / "fixture.json").read_text())
+bundled_config = yaml.safe_load((root / "bundle/configs/regenerate_s1_deepseek.yaml").read_text())
+assert bundled_config["prompt"] == fixture["config"]["prompt"]
+run = regeneration.RegenerationRun(fixture["rows"], fixture["config"], root / "outputs")
+calls = []
+def handler(request):
+    body = json.loads(request.content)
+    assert body["thinking"] == {"type": "enabled"}
+    assert body["messages"][0]["content"] == bundled_config["prompt"]
+    calls.append(body)
+    return httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {
+        "reasoning_content": "API thinking", "content": fixture["answer"]}}]})
+async def main():
+    await run.generate(run.smoke_indices, "fake-key", progress=False, transport=httpx.MockTransport(handler))
+    smoke = run.export(run.smoke_indices, "smoke")
+    assert smoke["summary"]["complete"] == 20
+    with smoke["path"].open(encoding="utf-8-sig", newline="") as stream:
+        reader = csv.DictReader(stream)
+        assert len(reader.fieldnames) == 5 and len(list(reader)) == 20
+    resumed = regeneration.RegenerationRun(fixture["rows"], fixture["config"], root / "outputs")
+    indices = list(range(len(fixture["rows"])))
+    await resumed.generate(indices, "fake-key", progress=False, transport=httpx.MockTransport(handler))
+    full = resumed.export(indices, "full")
+    assert len(calls) == 24 and full["summary"]["remaining"] == 0
+    exported = io.read_jsonl(full["path"])
+    assert all(row[resumed.answer_column] == fixture["answer"] for row in exported)
+    assert all(row[resumed.reasoning_column] == "API thinking" for row in exported)
+asyncio.run(main())
+'''
+    result = subprocess.run([sys.executable, "-I", "-c", script, str(tmp_path)],
+                            cwd=tmp_path, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
