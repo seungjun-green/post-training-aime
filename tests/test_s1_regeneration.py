@@ -22,14 +22,8 @@ from pipeline.regenerate_s1 import (
     retry_after_seconds,
 )
 
-STRUCTURED_ANSWER = """## 1. Planning
-Use the supplied equation to isolate x.
-## 2. Evaluation
-Subtract 2 from both sides, then divide by 3.
-## 3. Reflection
-Substitute the result into the original equation.
-## 4. Exploration
-An equivalent verification multiplies the result by 3 and adds 2.
+NATURAL_ANSWER = """We need to isolate x, so subtract 2 from both sides of the equation.
+Dividing by 3 gives x = 2. Substitution gives 3(2) + 2 = 8, matching the original.
 Final answer: \\boxed{wrong-is-retained}
 """
 
@@ -53,7 +47,7 @@ def config(source):
 
 
 def response(index="test", *, finish="stop", reasoning='Plan, calculate.\nCheck "α".',
-             answer=STRUCTURED_ANSWER):
+             answer=NATURAL_ANSWER):
     return httpx.Response(200, json={
         "id": f"response-{index}", "model": "returned-model-version",
         "system_fingerprint": "test", "usage": {"prompt_tokens": 2, "completion_tokens": 5,
@@ -104,7 +98,7 @@ async def test_smoke_then_full_concurrent_resumable_csv_and_source_preservation(
     for row, index in zip(data, run.smoke_indices, strict=True):
         assert row["question"] == source[index]["question"]
         assert row["deepseek_thinking_trajectory"] == source[index]["deepseek_thinking_trajectory"]
-        assert row[run.answer_column] == STRUCTURED_ANSWER
+        assert row[run.answer_column] == NATURAL_ANSWER
     # New runtime + torn final append: repair only the interrupted tail and reuse completed rows.
     with run.journal.open("ab") as f:
         f.write(b'{"index":')
@@ -165,33 +159,42 @@ async def test_incomplete_not_promoted_and_retried_on_resume(source, config, tmp
 
 @pytest.mark.parametrize("answer", [
     r"The answer is \boxed{2}.",
-    STRUCTURED_ANSWER.replace("## 3. Reflection", "## 3. Something else"),
-    STRUCTURED_ANSWER.replace("Use the supplied equation to isolate x.", ""),
-    STRUCTURED_ANSWER.replace("An equivalent verification multiplies the result by 3 and adds 2.", ""),
-    STRUCTURED_ANSWER + "\n## 4. Exploration\nRepeated section.",
-    STRUCTURED_ANSWER.replace("## 1. Planning", "## 2. Evaluation", 1).replace(
-        "## 2. Evaluation\nSubtract", "## 1. Planning\nSubtract"),
+    "Final answer: 2",
+    "We compute x = 2.\nFinal answer: ",
+    NATURAL_ANSWER + "\nFinal answer: 2",
+    "## 1. Planning\n" + NATURAL_ANSWER,
+    "**Reflection**\n" + NATURAL_ANSWER,
 ])
-def test_unstructured_empty_duplicate_or_reordered_final_sections_rejected(config, answer):
-    sections = config["output_format"]["required_sections"]
-    assert answer_format_issues(STRUCTURED_ANSWER, sections) == []
-    assert answer_format_issues(answer, sections)
+def test_invalid_natural_response_format_rejected(config, answer):
+    assert answer_format_issues(NATURAL_ANSWER, config["output_format"]) == []
+    assert answer_format_issues(answer, config["output_format"])
+
+
+@pytest.mark.parametrize("answer", [
+    NATURAL_ANSWER,
+    "Substitution verifies x = 2.\n**Final answer:** \n2",
+    "Induction gives the result for every positive integer.\nFinal answer: The claim holds.",
+    "I first got 5, but substitution gives 17 instead of 8. Correcting the subtraction "
+    "gives x = 2, which verifies.\nFinal answer: 2",
+])
+def test_natural_format_accepts_smooth_corrected_and_proof_responses(config, answer):
+    assert answer_format_issues(answer, config["output_format"]) == []
 
 
 async def test_format_applies_to_final_content_not_raw_thinking(source, config, tmp_path):
     run = RegenerationRun(source, config, tmp_path)
     short_answer = r"\boxed{2}"
     await run.generate([0], "fake-key", progress=False, transport=httpx.MockTransport(
-        lambda request: response(reasoning=STRUCTURED_ANSWER, answer=short_answer)))
+        lambda request: response(reasoning=NATURAL_ANSWER, answer=short_answer)))
     assert not run.succeeded(0)
     assert run.latest[0]["status"] == "invalid_format"
-    assert run.latest[0]["reasoning"] == STRUCTURED_ANSWER
+    assert run.latest[0]["reasoning"] == NATURAL_ANSWER
     assert run.latest[0]["answer"] == short_answer
     partial = run.export(range(len(source)), "full")
     assert read_jsonl(partial["path"])[0][run.answer_column] is None
     assert read_jsonl(partial["status_path"])[0]["format_issues"]
     await run.generate([0], "fake-key", progress=False, transport=httpx.MockTransport(
-        lambda request: response(reasoning="Unstructured raw thinking", answer=STRUCTURED_ANSWER)))
+        lambda request: response(reasoning="Unstructured raw thinking", answer=NATURAL_ANSWER)))
     assert run.succeeded(0)
     manifest = json.loads((run.root / "manifest.json").read_text())
     assert manifest["intended_training_target_column"] == run.answer_column
@@ -349,7 +352,7 @@ def test_notebook_bundle_runs_in_isolation(source, config, tmp_path):
                 with ZipFile(io.BytesIO(base64.b64decode(ast.literal_eval(node.value)))) as archive:
                     archive.extractall(tmp_path / "bundle")
     (tmp_path / "fixture.json").write_text(json.dumps({"rows": source, "config": config,
-                                                     "answer": STRUCTURED_ANSWER}))
+                                                     "answer": NATURAL_ANSWER}))
     script = '''
 import asyncio, csv, json, sys
 from pathlib import Path

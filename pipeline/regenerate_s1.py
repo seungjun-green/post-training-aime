@@ -57,22 +57,25 @@ class FatalAPIError(RuntimeError):
     """Authentication, billing or invalid request errors must stop paid work."""
 
 
-def answer_format_issues(answer, required_sections):
-    """Check visible section structure only, not correctness or reasoning quality."""
+def answer_format_issues(answer, output_format):
+    """Check presentation only; no claim of correctness or authentic self-correction."""
     if not isinstance(answer, str) or not answer.strip():
         return ["missing_final_response"]
-    headings = list(re.finditer(r"^##[ \t]+([^\r\n]+?)[ \t]*\r?$", answer, re.MULTILINE))
-    names = [m.group(1).strip() for m in headings]
     issues = []
-    if names != required_sections:
-        issues.append("required_sections_missing_duplicate_or_out_of_order")
-    for i, heading in enumerate(headings):
-        end = headings[i + 1].start() if i + 1 < len(headings) else len(answer)
-        body = answer[heading.end():end].strip()
-        # A concluding answer by itself does not populate the Exploration section.
-        body = re.split(r"(?im)^\s*(?:\*\*)?Final answer:", body)[0].strip()
-        if not body:
-            issues.append("empty_section:" + names[i])
+    marker = re.escape(output_format["final_answer_marker"])
+    endings = list(re.finditer(r"(?im)^[ \t]*(?:\*\*)?" + marker + r"(?:\*\*)?[ \t]*", answer))
+    if len(endings) != 1:
+        issues.append("missing_or_duplicate_final_answer_marker")
+    else:
+        if not answer[:endings[0].start()].strip():
+            issues.append("missing_worked_solution")
+        if not answer[endings[0].end():].strip():
+            issues.append("missing_final_conclusion")
+    # Flag a return to the old four-section template; no reasoning behavior is
+    # required to occur a fixed number of times, or at all when unnecessary.
+    if re.search(r"(?im)^[ \t]*(?:#{1,6}[ \t]+|\*\*)[ \t]*(?:[1-4][.)][ \t]*)?"
+                 r"(?:Planning|Evaluation|Reflection|Exploration)[ \t:]*(?:\*\*)?[ \t]*$", answer):
+        issues.append("fixed_cognitive_section_heading")
     return issues
 
 
@@ -81,13 +84,14 @@ class RegenerationRun:
         self.rows = copy.deepcopy(rows)
         self.config = copy.deepcopy(config)
         validate_source(self.rows, self.config)
-        sections = self.config["output_format"]["required_sections"]
-        if (not isinstance(sections, list) or len(sections) != 4
-                or any(not isinstance(s, str) or not s.strip() for s in sections)
-                or len(set(sections)) != 4):
-            raise ValueError("Expected four distinct final-response section titles")
-        if any("## " + title not in self.config["prompt"] for title in sections):
-            raise ValueError("Final-response section titles must be included in the prompt")
+        output_format = self.config["output_format"]
+        if (set(output_format) != {"style", "final_answer_marker"}
+                or output_format["style"] != "natural_reasoning"
+                or not isinstance(output_format["final_answer_marker"], str)
+                or not output_format["final_answer_marker"].strip()):
+            raise ValueError("Expected natural_reasoning format with a final-answer marker")
+        if output_format["final_answer_marker"] not in self.config["prompt"]:
+            raise ValueError("Final-answer marker must be included in the prompt")
         api = self.config["api"]
         if api["model"] not in {"deepseek-v4-pro", "deepseek-flash"}:
             raise ValueError("Unsupported DeepSeek model")
@@ -187,7 +191,7 @@ class RegenerationRun:
                     and isinstance(answer, str) and bool(answer.strip())
                 )
                 format_issues = answer_format_issues(
-                    answer, self.config["output_format"]["required_sections"])
+                    answer, self.config["output_format"])
                 record.update(
                     reasoning=reasoning, answer=answer, finish_reason=finish,
                     refusal=message.get("refusal"),

@@ -8,9 +8,11 @@ Open [`regenerate_s1_deepseek.ipynb`](notebooks/regenerate_s1_deepseek.ipynb) on
 with `HF_TOKEN` (read access) and `DEEPSEEK_API_KEY` in Colab Secrets. The notebook bundles its
 code and config, so no Git push is required. It loads all 996 pinned rows from
 `Seungjun/dp_removed_s1K-1.1` and asks `deepseek-v4-pro` to solve each question independently
-with thinking enabled. The final response must be a self-contained worked solution with four
-named sections: Planning, Evaluation (including the full derivation), Reflection, and Exploration,
-followed by the final answer. There is no brevity target or correctness-based filtering.
+with thinking enabled. The final response must be a natural worked reasoning process without
+fixed headings: planning the approach, checking intermediate results as they arise, revising
+failed approaches, and exploring alternatives when useful. Instructive mistakes from the API
+reasoning may be included with their detection and correction; none should be invented.
+A smooth solution need not include an error. There is no brevity target or correctness filtering.
 The intended new SFT target is `deepseek-v4-pro_answer`; `deepseek-v4-pro_reasoning` retains the
 raw API thinking for inspection. The existing SFT loader is not changed by this notebook.
 
@@ -21,8 +23,8 @@ raw API thinking for inspection. The existing SFT loader is not changed by this 
   `deepseek-v4-pro_reasoning` and `deepseek-v4-pro_answer`.
 - Defaults are 16 concurrent requests, pacing, transient-error retries, and per-response journals
   on Drive under `LG-AIME-S1-DeepSeek/runs/<model>/<settings-id>/`. Rerunning resumes successful
-  rows and retries failures. Incomplete outputs and final responses with missing, empty, duplicate,
-  or out-of-order sections are flagged separately; partial exports retain
+  rows and retries failures. Incomplete outputs and format failures (missing or repeated final
+  marker, empty solution/conclusion, or old fixed cognitive headings) are flagged; partial exports retain
   all source rows with null generated fields for failures. Settings/code changes create a new run.
 
 Settings and the full prompt are in [`regenerate_s1_deepseek.yaml`](configs/regenerate_s1_deepseek.yaml).
@@ -31,10 +33,12 @@ No SFT length filter is applied to the source or regenerated data. This notebook
 SFT/evaluation code or publish to Hugging Face. Local tests exercise mock API calls, including
 the actual smoke/full notebook cells; live generation must be checked in the Colab smoke run.
 Rebuild with `python scripts/build_regeneration_notebook.py` after changing its bundled code.
-For the structured-final-response update, open the rebuilt notebook in a **fresh Colab runtime**
-and rerun the 20-row smoke test. A new output folder prevents reuse of the previous unstructured
+For the natural-reasoning update, open the rebuilt notebook in a **fresh Colab runtime**
+and rerun the 20-row smoke test. A new output folder prevents reuse of the previous four-section
 answers, while the seed keeps the same 20 questions. Raw failed responses remain in the journal.
-Section checks only enforce structure; use the smoke CSV to inspect the actual solution quality.
+Format checks do not establish correctness, reasoning quality, or authentic self-correction.
+Use the smoke CSV to compare claimed corrections with the raw API reasoning. This prompt is
+our adaptation of the cognitive processes discussed in Kimi k1.5, not its unpublished prompt.
 
 ## Upload existing DeepSeek results to Hugging Face
 

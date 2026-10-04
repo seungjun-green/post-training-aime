@@ -24,18 +24,21 @@ def cells():
         DeepSeek Pro solves the original **question only**; it is not given the old reasoning,
         answer, reference solution, or grade. Thinking is enabled. Its native `reasoning_content`
         becomes `deepseek-v4-pro_reasoning`; its final `content` becomes `deepseek-v4-pro_answer`.
-        The final response must contain **four named sections: Planning, Evaluation, Reflection,
-        and Exploration**, followed by the final answer. Evaluation contains the full worked
-        derivation; the other sections explain the method and problem-specific checks. No length
-        target is requested, and mistakes or alternatives must not be fabricated.
+        The final response must contain a **natural worked reasoning process, without fixed
+        section headings**. Planning establishes the approach; evaluation checks intermediate
+        results as they arise; reflection revises a failing approach; exploration considers an
+        alternative when useful. Instructive errors or dead ends from the API thinking may be
+        included with their checks and corrections. Errors must not be invented, and a smooth
+        solution need not contain any. No word or token length target is requested.
         Here "answer" means the API's final `content` field, not a literal `<answer>` wrapper.
         There is **no answer-correctness filter**.
 
-        **The intended new training target is `deepseek-v4-pro_answer`: the complete structured
+        **The intended new training target is `deepseek-v4-pro_answer`: the complete natural
         worked solution.** `deepseek-v4-pro_reasoning` retains raw API thinking for inspection.
         This notebook does not change the existing SFT loader to use either new column.
 
         **Updated format:** reopen this notebook in a fresh Colab runtime and rerun the smoke test.
+        This replaces our previous four-section template, not a published Kimi prompt.
         The new prompt/code creates a fresh output folder, leaving previous results intact.
         Seed 42 selects the same 20 questions, so you can compare the old and updated smoke runs.
 
@@ -118,9 +121,13 @@ def cells():
         UTF-8 CSV preserves multiline text, quotation marks, and Unicode. Long reasoning can exceed
         spreadsheet apps' cell-display limits; the CSV itself retains the full text. Blank generated
         cells mean generation is incomplete/failed/pending or the final-response format is invalid;
-        inspect `smoke/status.jsonl` for details. We check the four headings in order and nonempty
-        sections. These structural checks do not assess correctness or quality: review whether the
-        answer column itself provides the full derivation and meaningful checks. Raw returned text,
+        inspect `smoke/status.jsonl` for details. Format checks require text before a single
+        `Final answer:` line and a nonempty conclusion, and flag headings from the previous fixed
+        cognitive-section template. Proofs can end with a textual conclusion; no box or length
+        minimum is enforced. These checks do not assess correctness or quality. Review whether
+        intermediate checks occur where useful and compare any reported corrections with the raw
+        API reasoning column. A textual match alone does not prove the model's internal history.
+        A smooth solution without corrections is valid. Raw returned text,
         including format failures, remains in `attempts.jsonl`. Rerun to retry unsuccessful rows.
         The old `deepseek_grade` is not a grade for the new answer, and no grading is run here.
         """),
@@ -148,7 +155,7 @@ def cells():
 
         `full/dataset.jsonl` is written when every row is complete. Otherwise the export is called
         `full/dataset.partial.jsonl`, still containing every row, with null generated fields for
-        unsuccessful rows (including missing/empty/out-of-order sections). `full/status.jsonl`
+        unsuccessful rows (including missing final markers or fixed cognitive headings). `full/status.jsonl`
         lists failures by source index; `attempts.jsonl`
         retains raw returned text, including incomplete responses and retry usage. Rerun the cell
         to retry remaining rows. Authentication/balance/invalid-request errors stop the run and

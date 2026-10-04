@@ -27,41 +27,37 @@ smoke:
   examples: 20
   seed: 42
 output_format:
-  required_sections:
-    - "1. Planning"
-    - "2. Evaluation"
-    - "3. Reflection"
-    - "4. Exploration"
+  style: natural_reasoning
+  final_answer_marker: "Final answer:"
 prompt: |-
-  Solve the supplied problem in English. Your final response must be a self-contained worked
-  solution suitable for teaching another model how to solve the problem. The reader will only
-  receive this final response, not your separate thinking/reasoning channel. Therefore include
-  the full derivation, key calculations, justifications, and checks in the final response itself;
-  do not replace them with a conclusion or a summary of reasoning performed elsewhere.
+  Solve the supplied problem in English. Your final response will be used to teach a
+  smaller model how to reason through problems like this. The reader will only receive
+  this final response, not your separate thinking/reasoning channel, so the response
+  itself must contain the full reasoning: derivations, key calculations, and
+  justifications. Do not replace them with a summary of reasoning performed elsewhere.
 
-  Organize the final response under exactly these four Markdown headings, in this order:
+  Write the response as a natural reasoning process, not a polished textbook solution.
+  Include the following behaviors at the points where they naturally occur:
 
-  ## 1. Planning
-  Identify the goal, given facts, constraints, and relevant concepts. Explain the proposed
-  method and why it applies to this particular problem.
+  - Planning: start by identifying the goal, the given facts and constraints, and a
+    strategy, and explain why it fits this problem.
+  - Evaluation: while executing the plan, check intermediate results right after
+    deriving them (substitute back, check signs, units, special cases, or whether a
+    magnitude is plausible).
+  - Reflection: when a check fails or an approach stalls, say so explicitly, identify
+    what went wrong, and revise the approach.
+  - Exploration: when an approach stalls, or when an independent method would add real
+    confidence, try an alternative and compare it with the main approach.
 
-  ## 2. Evaluation
-  Execute the plan: present the actual solution step by step, with the equations, calculations,
-  deductions, or evidence needed to follow it. Explain why important steps are valid and check
-  intermediate results. This section must contain the worked solution, not merely assess it.
+  Your separate reasoning may have contained real false starts, errors you caught, or
+  approaches you abandoned. When one of these is instructive, include a concise version
+  of it at the point where it occurred: what you tried, how you noticed the problem, and
+  how you fixed it. Include only errors and dead ends that actually occurred in your
+  reasoning. Do not fabricate any. If your reasoning went smoothly, do not add any.
 
-  ## 3. Reflection
-  Check the resulting solution against the original conditions. Address relevant edge cases,
-  units, assumptions, completeness of cases, or potential errors. If a correction is needed,
-  explain and incorporate it. Use concrete checks instead of generic claims that the answer
-  was verified. Do not invent mistakes or claim a history of failed attempts.
+  Do not use fixed section headings. Let the problem determine the amount of
+  explanation; there is no requested word or token length.
 
-  ## 4. Exploration
-  Explain an alternative approach or an independent verification when it adds value, and how
-  it supports or differs from the main method. If no additional approach is useful, explain why
-  the established argument already resolves the problem; do not fabricate an alternative.
-
-  After these four sections, finish with "Final answer:" and the result inside \boxed{} when
-  the problem has a discrete final answer. For a proof or explanation question, state the proved
-  conclusion. Include substantive, problem-specific content in every section. Let the problem
-  determine the amount of explanation; there is no requested word or token length.
+  End with "Final answer:" and the result inside \boxed{} when the problem has a
+  discrete final answer. For a proof or explanation question, state the proved
+  conclusion.
