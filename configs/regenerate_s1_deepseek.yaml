@@ -27,7 +27,12 @@ smoke:
   examples: 20
   seed: 42
 output_format:
-  style: natural_reasoning
+  style: structured_reasoning
+  sections:
+    - Planning
+    - Solution and Evaluation
+    - Reflection
+    - Exploration
   final_answer_marker: "Final answer:"
 prompt: |-
   Solve the supplied problem in English. Your final response will be used to teach a
@@ -36,18 +41,46 @@ prompt: |-
   itself must contain the full reasoning: derivations, key calculations, and
   justifications. Do not replace them with a summary of reasoning performed elsewhere.
 
-  Write the response as a natural reasoning process, not a polished textbook solution.
-  Include the following behaviors at the points where they naturally occur:
+  Use exactly these four section headings once each, in this order, followed by the
+  final-answer line. Every section must contain problem-specific mathematical content.
 
-  - Planning: start by identifying the goal, the given facts and constraints, and a
-    strategy, and explain why it fits this problem.
-  - Evaluation: while executing the plan, check intermediate results right after
-    deriving them (substitute back, check signs, units, special cases, or whether a
-    magnitude is plausible).
-  - Reflection: when a check fails or an approach stalls, say so explicitly, identify
-    what went wrong, and revise the approach.
-  - Exploration: when an approach stalls, or when an independent method would add real
-    confidence, try an alternative and compare it with the main approach.
+  ## Planning
+  Identify the goal and the key given facts and constraints. State the strategy and
+  explain why it fits this problem; do not merely announce that you will solve it.
+
+  ## Solution and Evaluation
+  Carry out the full solution, including the essential derivations, calculations, and
+  justifications. Check major intermediate results at the point where they arise using
+  an appropriate substitution, boundary or special case, sign, range, units, or an
+  independent calculation. State what is being checked, show the check, and explain
+  what it establishes. A statement such as "this checks out" alone is insufficient.
+  If a check reveals an error, explain and correct it before relying on that result.
+
+  ## Reflection
+  Reconsider the approach used above. Identify a specific step, assumption,
+  or method choice that could be improved in clarity, efficiency, generality,
+  or completeness.
+
+  Explain the limitation, then develop a concrete refinement. Show the
+  revised argument, calculation, case split, or method choice, and explain
+  what it improves compared with the original approach. Merely repeating
+  that the solution is valid is insufficient.
+
+  The original approach need not be wrong. A refinement may simplify a
+  derivation, remove an unnecessary assumption, handle a boundary case
+  explicitly, or replace an inefficient step.
+
+  If you considered a refinement but it offers no meaningful improvement,
+  explain the specific tradeoff and why you retain the original approach.
+  Do not invent errors or force unnecessary changes.
+
+  ## Exploration
+  Consider a concrete alternative approach even if the main approach succeeded.
+  Develop its key equation, construction, or mathematical observation enough to assess
+  its applicability, then compare it with the main method. Explain how it corroborates
+  the result or why it is less suitable. A complete second solution is not required,
+  but simply saying "another method is possible" is insufficient. Do not claim that
+  an unfinished alternative independently verifies the answer.
 
   Your separate reasoning may have contained real false starts, errors you caught, or
   approaches you abandoned. When one of these is instructive, include a concise version
@@ -55,9 +88,10 @@ prompt: |-
   how you fixed it. Include only errors and dead ends that actually occurred in your
   reasoning. Do not fabricate any. If your reasoning went smoothly, do not add any.
 
-  Do not use fixed section headings. Let the problem determine the amount of
-  explanation; there is no requested word or token length.
+  Keep the writing connected within the sections. Reflection and exploration must not
+  be omitted just because no error or dead end occurred. Let the problem determine the
+  amount of explanation; there is no requested word or token length.
 
-  End with "Final answer:" and the result inside \boxed{} when the problem has a
+  After Exploration, end with exactly one "Final answer:" line and the result inside \boxed{} when the problem has a
   discrete final answer. For a proof or explanation question, state the proved
   conclusion.

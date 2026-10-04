@@ -24,21 +24,27 @@ def cells():
         DeepSeek Pro solves the original **question only**; it is not given the old reasoning,
         answer, reference solution, or grade. Thinking is enabled. Its native `reasoning_content`
         becomes `deepseek-v4-pro_reasoning`; its final `content` becomes `deepseek-v4-pro_answer`.
-        The final response must contain a **natural worked reasoning process, without fixed
-        section headings**. Planning establishes the approach; evaluation checks intermediate
-        results as they arise; reflection revises a failing approach; exploration considers an
-        alternative when useful. Instructive errors or dead ends from the API thinking may be
-        included with their checks and corrections. Errors must not be invented, and a smooth
-        solution need not contain any. No word or token length target is requested.
+        The final response must contain four explicit sections in order: **Planning**,
+        **Solution and Evaluation**, **Reflection**, and **Exploration**, followed by
+        **Final answer:**. Planning explains the strategy choice. Solution and Evaluation
+        contains the full derivation with concrete intermediate checks. Reflection develops a
+        concrete refinement and explains what it improves, or explains the specific tradeoff
+        for retaining the original approach. It does not require an error. Exploration develops a
+        concrete alternative and compares it with the main method even when that method succeeded;
+        a full second solution is not required. Instructive errors or dead ends from API thinking
+        may be included with their detection and correction, but must not be invented.
+        No word or token length target is requested.
         Here "answer" means the API's final `content` field, not a literal `<answer>` wrapper.
         There is **no answer-correctness filter**.
 
-        **The intended new training target is `deepseek-v4-pro_answer`: the complete natural
+        **The intended new training target is `deepseek-v4-pro_answer`: the complete structured
         worked solution.** `deepseek-v4-pro_reasoning` retains raw API thinking for inspection.
         This notebook does not change the existing SFT loader to use either new column.
 
         **Updated format:** reopen this notebook in a fresh Colab runtime and rerun the smoke test.
-        This replaces our previous four-section template, not a published Kimi prompt.
+        This replaces the natural-reasoning format with required sections and concrete content
+        requirements. It is our adaptation of Kimi's cognitive processes, not a published Kimi
+        prompt or a claim that the paper prescribes four fixed sequential stages.
         The new prompt/code creates a fresh output folder, leaving previous results intact.
         Seed 42 selects the same 20 questions, so you can compare the old and updated smoke runs.
 
@@ -121,13 +127,27 @@ def cells():
         UTF-8 CSV preserves multiline text, quotation marks, and Unicode. Long reasoning can exceed
         spreadsheet apps' cell-display limits; the CSV itself retains the full text. Blank generated
         cells mean generation is incomplete/failed/pending or the final-response format is invalid;
-        inspect `smoke/status.jsonl` for details. Format checks require text before a single
-        `Final answer:` line and a nonempty conclusion, and flag headings from the previous fixed
-        cognitive-section template. Proofs can end with a textual conclusion; no box or length
-        minimum is enforced. These checks do not assess correctness or quality. Review whether
-        intermediate checks occur where useful and compare any reported corrections with the raw
-        API reasoning column. A textual match alone does not prove the model's internal history.
-        A smooth solution without corrections is valid. Raw returned text,
+        inspect `smoke/status.jsonl` for details. Format checks require each of the four named
+        sections exactly once, in order, with nonempty content, followed by a single
+        `Final answer:` line and a nonempty conclusion. Markdown or plain headings are accepted.
+        Proofs can end with a textual conclusion; no box or length minimum is enforced.
+        These checks do not assess correctness or semantic quality. Review the answer column
+        using the checklist below; headings and words such as "check" are not quality evidence:
+
+        - Planning: is the method choice justified using this problem's facts or constraints?
+        - Solution and Evaluation: is the derivation complete, and do checks show their target,
+          calculation or argument, and what the result establishes?
+        - Reflection: is a specific limitation identified and a concrete refinement shown,
+          with an explanation of what improves? If the original approach is retained, is the
+          tradeoff explained specifically rather than merely repeating that the solution is valid?
+        - Exploration: does an alternative contain a concrete equation, construction, or
+          observation and a comparison with the main method? An unfinished alternative must
+          not be presented as independent verification.
+
+        Assess reflection coverage separately from preservation of actual error corrections.
+        Compare claimed mistakes and corrections with the raw API reasoning column; a textual
+        match alone does not prove internal history. A smooth solution without corrections is
+        valid but still needs Reflection and Exploration. Raw returned text,
         including format failures, remains in `attempts.jsonl`. Rerun to retry unsuccessful rows.
         The old `deepseek_grade` is not a grade for the new answer, and no grading is run here.
         """),
@@ -155,7 +175,8 @@ def cells():
 
         `full/dataset.jsonl` is written when every row is complete. Otherwise the export is called
         `full/dataset.partial.jsonl`, still containing every row, with null generated fields for
-        unsuccessful rows (including missing final markers or fixed cognitive headings). `full/status.jsonl`
+        unsuccessful rows (including missing, duplicate, empty, or misordered required sections
+        and invalid final-answer markers). `full/status.jsonl`
         lists failures by source index; `attempts.jsonl`
         retains raw returned text, including incomplete responses and retry usage. Rerun the cell
         to retry remaining rows. Authentication/balance/invalid-request errors stop the run and
@@ -189,7 +210,7 @@ def cells():
         displays too. The API journal records returned token usage, including retries. A request
         whose response was lost or cancelled can still be billed; consult the provider dashboard.
 
-        References: [Kimi k1.5, §2.2](https://arxiv.org/html/2501.12599v1#S2.S2),
+        References: [Kimi k1.5, §2.2](https://arxiv.org/html/2501.12599v1#S2.SS2),
         [DeepSeek thinking fields](https://api-docs.deepseek.com/guides/thinking_mode/),
         [DeepSeek API](https://api-docs.deepseek.com/api/create-chat-completion/).
         """),

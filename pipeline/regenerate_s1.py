@@ -57,6 +57,9 @@ class FatalAPIError(RuntimeError):
     """Authentication, billing or invalid request errors must stop paid work."""
 
 
+COGNITIVE_SECTIONS = ["Planning", "Solution and Evaluation", "Reflection", "Exploration"]
+
+
 def answer_format_issues(answer, output_format):
     """Check presentation only; no claim of correctness or authentic self-correction."""
     if not isinstance(answer, str) or not answer.strip():
@@ -71,11 +74,29 @@ def answer_format_issues(answer, output_format):
             issues.append("missing_worked_solution")
         if not answer[endings[0].end():].strip():
             issues.append("missing_final_conclusion")
-    # Flag a return to the old four-section template; no reasoning behavior is
-    # required to occur a fixed number of times, or at all when unnecessary.
-    if re.search(r"(?im)^[ \t]*(?:#{1,6}[ \t]+|\*\*)[ \t]*(?:[1-4][.)][ \t]*)?"
-                 r"(?:Planning|Evaluation|Reflection|Exploration)[ \t:]*(?:\*\*)?[ \t]*$", answer):
-        issues.append("fixed_cognitive_section_heading")
+    sections = output_format["sections"]
+    headings = list(re.finditer(
+        r"(?im)^[ \t]*(?:#{1,6}[ \t]+)?(?:\*\*)?(?:[1-4][.)][ \t]*)?(?P<section>"
+        + "|".join(re.escape(section) for section in sections)
+        + r")[ \t]*:?(?:\*\*)?[ \t]*\r?$", answer))
+    names = [heading["section"].casefold() for heading in headings]
+    expected = [section.casefold() for section in sections]
+    for section, name in zip(sections, expected):
+        if names.count(name) != 1:
+            issues.append(f"missing_or_duplicate_section:{section}")
+    if sorted(names) == sorted(expected) and names != expected:
+        issues.append("sections_out_of_order")
+    for i, heading in enumerate(headings):
+        # Stop at the next required heading or final marker, so another section's
+        # text (or the conclusion) cannot satisfy an empty section.
+        boundaries = [len(answer)]
+        if i + 1 < len(headings):
+            boundaries.append(headings[i + 1].start())
+        boundaries.extend(ending.start() for ending in endings if ending.start() > heading.start())
+        if not answer[heading.end():min(boundaries)].strip():
+            issues.append(f"empty_section:{heading['section']}")
+    if len(endings) == 1 and any(h.start() > endings[0].start() for h in headings):
+        issues.append("section_after_final_answer")
     return issues
 
 
@@ -85,13 +106,16 @@ class RegenerationRun:
         self.config = copy.deepcopy(config)
         validate_source(self.rows, self.config)
         output_format = self.config["output_format"]
-        if (set(output_format) != {"style", "final_answer_marker"}
-                or output_format["style"] != "natural_reasoning"
+        if (set(output_format) != {"style", "sections", "final_answer_marker"}
+                or output_format["style"] != "structured_reasoning"
+                or output_format["sections"] != COGNITIVE_SECTIONS
                 or not isinstance(output_format["final_answer_marker"], str)
                 or not output_format["final_answer_marker"].strip()):
-            raise ValueError("Expected natural_reasoning format with a final-answer marker")
+            raise ValueError("Expected structured_reasoning with four cognitive sections and a final-answer marker")
         if output_format["final_answer_marker"] not in self.config["prompt"]:
             raise ValueError("Final-answer marker must be included in the prompt")
+        if any(section not in self.config["prompt"] for section in COGNITIVE_SECTIONS):
+            raise ValueError("Cognitive section headings must be included in the prompt")
         api = self.config["api"]
         if api["model"] not in {"deepseek-v4-pro", "deepseek-flash"}:
             raise ValueError("Unsupported DeepSeek model")
