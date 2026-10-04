@@ -1,0 +1,24 @@
+training_config: configs/stage1_sft.yaml
+model_kind: sft
+qwen_model:
+  repo: Qwen/Qwen2.5-3B-Instruct
+  revision: aa8e72537993ba99e69dfaafa59ed015b17504d1
+evaluation_config: configs/eval_english.yaml
+execution_config: configs/eval_execution.yaml
+suite: configs/english_eval_suite.json
+epoch: 5
+seed: 42
+sampling:
+  temperature: 0.0
+  top_p: 1.0
+max_new_tokens: 20480
+groups:
+  aime:
+    datasets: [aime_2024, aime_2025, aime_2026]
+    count: 5
+  amc23:
+    datasets: [amc23]
+    count: 5
+  math_500:
+    datasets: [math_500]
+    count: 5

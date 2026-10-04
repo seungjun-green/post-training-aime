@@ -59,6 +59,22 @@ Rebuild with `python scripts/build_s1_upload_notebook.py`.
 
 ## Stage 1 SFT implementation
 
+For a small qualitative inspection of the **original EXAONE SFT epoch 5** and
+**Qwen/Qwen2.5-3B-Instruct**, open
+[`sample_original_sft_15.ipynb`](notebooks/sample_original_sft_15.ipynb). It bundles its
+code/configs and samples five questions from the combined AIME 2024–2026 pool, five
+AMC 2023 questions and five MATH-500 questions (15 total, seed 42). Defaults are
+temperature 0, one response per question, 20,480 output tokens and no budget forcing.
+The notebook automatically runs SFT followed by Qwen in separate subprocesses, with one
+model on the GPU at a time. Both use the same seeded questions with their native chat
+templates. For SFT, set `TRAIN_ROOT` to the original `LG-AIME-Stage1` Drive
+directory; Qwen loads a pinned Hugging Face revision without an SFT checkpoint. Full generated text,
+best-effort reasoning/answer fields, reference answers, correctness and termination
+details are saved to `LG-AIME-Sample15/<model_kind>/<run-id>/generations.jsonl` on Drive,
+and combined into `LG-AIME-Sample15/both/<comparison-id>/both_models_generations.jsonl`
+(30 responses), with an optional download cell. Completed problems resume from a durable journal.
+Rebuild with `python scripts/build_sft_sample_notebook.py`; the shared evaluator is unchanged.
+
 ### Llama 3.1 8B LoRA experiment
 
 Open [`train_stage1_llama31_lora.ipynb`](notebooks/train_stage1_llama31_lora.ipynb) for the
