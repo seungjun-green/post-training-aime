@@ -95,6 +95,117 @@ def test_local_data_requires_exact_original_content_and_ids(tmp_path):
         load_rows(cfg, local_rows=path)
 
 
+def test_answer_only_loss_excludes_reasoning_and_preserves_full_answer():
+    tokenizer = CharacterTokenizer()
+    answer = "Planning\nPlan\nSolution and Evaluation\nSolve\nReflection\nRefine\nExploration\nCompare\nFinal answer: Done."
+    source = {**row(), "deepseek-v4-pro_reasoning": "SECRET RAW THINKING",
+              "deepseek-v4-pro_answer": answer}
+    columns = {"question": "question", "answer": "deepseek-v4-pro_answer"}
+    example, text = format_example(tokenizer, source, columns, "answer_only")
+    supervised = tokenizer.decode([v for v in example["labels"] if v != -100])
+    assert supervised == answer + tokenizer.eos_token
+    assert example["labels"][-1] == -100
+    assert all(x == -100 for x in example["labels"][:text.index(answer)])
+    for excluded in ["SECRET RAW THINKING", "<think>", "<answer>", "MUST NOT", "\\boxed{4}"]:
+        assert excluded not in text
+    assert INSTRUCTION in text
+    del source["deepseek-v4-pro_reasoning"]
+    assert format_example(tokenizer, source, columns, "answer_only")[0] == example
+
+
+def test_answer_only_snapshot_filter_and_changed_data_rejection(tmp_path):
+    from common.io import write_jsonl
+    from train.answer_only import prepare_run
+
+    source = tmp_path / "generated.jsonl"
+    rows = [
+        {"question": "Q", "deepseek-v4-pro_answer": "Answer", "deepseek-v4-pro_reasoning": None},
+        {"question": "Q", "deepseek-v4-pro_answer": None},
+        {"question": "Q", "deepseek-v4-pro_answer": " "},
+        {"question": "Q", "deepseek-v4-pro_answer": "Answer!"},
+    ]
+    write_jsonl(source, rows)
+    template = ROOT / "configs/stage1_sft_deepseek_pro_answer_only.yaml"
+    with pytest.raises(ValueError, match="pinned JSONL"):
+        load_config(template)
+    path = prepare_run(source, template, tmp_path / "run", "answers")
+    cfg = load_config(path)
+    assert cfg["training"]["num_train_epochs"] == 5
+    assert cfg["model"] == config()["model"]
+    assert prepare_run(source, template, tmp_path / "run", "answers") == path
+    pinned, ids = load_rows(cfg)
+    assert ids == [f"regenerated:{i}" for i in range(4)]
+    assert all(set(r) == {"question", "deepseek-v4-pro_answer"} for r in pinned)
+    tokenizer = CharacterTokenizer()
+    cfg["max_seq_length"] = len(format_example(
+        tokenizer, pinned[0], cfg["data"]["columns"], "answer_only")[0]["input_ids"])
+    examples, report, _ = prepare_examples(tokenizer, pinned, ids, cfg)
+    assert len(examples) == 1 and report["kept_ids"] == ["regenerated:0"]
+    assert report["dropped_missing_outputs"] == 2
+    assert report["dropped_overlength"] == 1
+    assert not report["grade_filter_applied"] and not report["truncation_applied"]
+    rows[0]["deepseek-v4-pro_answer"] = "Changed answer"
+    write_jsonl(source, rows)
+    with pytest.raises(ValueError, match="choose a new RUN_NAME"):
+        prepare_run(source, template, tmp_path / "run", "answers")
+    assert load_rows(cfg)[0] == pinned
+    write_jsonl(Path(cfg["data"]["path"]), rows)
+    with pytest.raises(ValueError, match="Training rows differ"):
+        load_rows(cfg)
+
+
+def test_answer_only_notebook_bundle_is_current_and_isolated(tmp_path, monkeypatch):
+    import ast
+    import base64
+    import io
+    import subprocess
+    import sys
+    import zipfile
+
+    import nbformat
+
+    from train.answer_only import BUNDLE_FILES
+
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    from build_answer_only_sft_notebook import cells
+
+    notebook = nbformat.read(
+        ROOT / "notebooks/train_stage1_sft_deepseek_pro_answer_only.ipynb", as_version=4)
+    nbformat.validate(notebook)
+    assert [c.source for c in notebook.cells] == [c.source for c in cells()]
+    bundle = None
+    for cell in notebook.cells:
+        if cell.cell_type != "code":
+            continue
+        tree = ast.parse(cell.source)
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == "BUNDLE" for t in node.targets
+            ):
+                bundle = ast.literal_eval(node.value)
+    assert bundle
+    with zipfile.ZipFile(io.BytesIO(base64.b64decode(bundle))) as archive:
+        assert set(archive.namelist()) == set(BUNDLE_FILES)
+        for name in archive.namelist():
+            assert archive.read(name) == (ROOT / name).read_bytes()
+        archive.extractall(tmp_path)
+    # Import and prepare in an extracted copy with no .git or evaluation modules.
+    source = tmp_path / "sample.jsonl"
+    source.write_text(json.dumps({"question": "Q", "deepseek-v4-pro_answer": "A"}) + "\n")
+    subprocess.run([
+        sys.executable, "-m", "train.answer_only", "--dataset", str(source),
+        "--config", "configs/stage1_sft_deepseek_pro_answer_only.yaml",
+        "--output-root", str(tmp_path / "output"), "--run-name", "test",
+    ], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run([sys.executable, "-c", "from train.stage1_sft import load_config; "
+                    "from train.sft_data import load_rows; "
+                    "from train.answer_only import training_code_digest; "
+                    "c=load_config('output/inputs/test/training.yaml'); "
+                    "assert load_rows(c)[0][0]['deepseek-v4-pro_answer']=='A'; "
+                    "assert len(training_code_digest())==64"],
+                   cwd=tmp_path, check=True, capture_output=True)
+
+
 def test_pro_columns_missing_outputs_and_full_sequence_limit():
     tokenizer = CharacterTokenizer()
     cfg = config()
@@ -118,6 +229,7 @@ def test_pro_columns_missing_outputs_and_full_sequence_limit():
 
 def test_pro_config_preserves_hyperparameters_and_pins_head(monkeypatch):
     from types import SimpleNamespace
+
     from huggingface_hub import HfApi
 
     monkeypatch.setattr(HfApi, "dataset_info", lambda self, repo, revision:
@@ -287,7 +399,7 @@ def test_stage1_notebooks_are_separate_thin_and_fresh(monkeypatch, kind):
 def test_evaluation_notebook_prioritizes_final_epoch_and_makes_others_optional(tmp_path, monkeypatch, profile):
     pytest.importorskip("nbformat")
     monkeypatch.syspath_prepend(str(ROOT / "scripts"))
-    from build_stage1_notebook import eval_cells, sample1_eval_cells, budget_eval_cells
+    from build_stage1_notebook import budget_eval_cells, eval_cells, sample1_eval_cells
 
     train_root, baseline_root = tmp_path / "training", tmp_path / "baseline"
     pro = profile == "sample1"

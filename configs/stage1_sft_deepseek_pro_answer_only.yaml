@@ -1,0 +1,79 @@
+# Input path/count/digests are pinned by train.answer_only before training.
+stage: stage1
+run_name: sft_s1k_deepseek_pro_answer_only
+output_root: .
+model:
+  repo: LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct
+  revision: e949c91dec92095908d34e6b560af77dd0c993f8
+  trust_remote_code: true
+data:
+  source: jsonl
+  path: null
+  expected_rows: null
+  content_digest: null
+  ids_digest: null
+  response_format: answer_only
+  columns:
+    question: question
+    answer: deepseek-v4-pro_answer
+  drop_missing_outputs: true
+  incorrect_grade_values: []
+max_seq_length: 20480
+sanity_example_index: 0
+masked_placeholder: '[MASKED]'
+hardware:
+  name_contains: RTX PRO 6000
+  min_memory_gib: 90
+attention:
+  preference:
+  - flash_attention_2
+  - sdpa
+  probe_sequence_length: 128
+training:
+  num_train_epochs: 5
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 16
+  learning_rate: 1.0e-05
+  warmup_ratio: 0.05
+  lr_scheduler_type: cosine
+  optim: adamw_torch
+  adam_beta1: 0.9
+  adam_beta2: 0.95
+  adam_epsilon: 1.0e-08
+  weight_decay: 0.0001
+  max_grad_norm: 1.0
+  bf16: true
+  fp16: false
+  tf32: false
+  gradient_checkpointing: true
+  gradient_checkpointing_kwargs:
+    use_reentrant: false
+  seed: 42
+  data_seed: 42
+  packing: false
+  padding_free: false
+  max_length: null
+  dataset_kwargs:
+    skip_prepare_dataset: true
+  completion_only_loss: false
+  assistant_only_loss: false
+  loss_type: nll
+  remove_unused_columns: false
+  eval_strategy: 'no'
+  save_strategy: epoch
+  save_total_limit: null
+  save_only_model: false
+  save_safetensors: true
+  load_best_model_at_end: false
+  logging_strategy: steps
+  logging_steps: 1
+  logging_first_step: true
+  logging_nan_inf_filter: false
+  report_to: []
+  dataloader_drop_last: false
+  dataloader_num_workers: 0
+  dataloader_pin_memory: true
+  group_by_length: false
+  label_smoothing_factor: 0.0
+  average_tokens_across_devices: false
+  push_to_hub: false

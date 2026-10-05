@@ -14,7 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "configs/dapo_compare_eval.yaml"
 
 
-def test_subset_is_filtered_before_loading_and_shared_evaluator_resumes(tmp_path, monkeypatch):
+@pytest.mark.parametrize("bundled", [False, True])
+def test_subset_is_filtered_before_loading_and_shared_evaluator_resumes(tmp_path, monkeypatch, bundled):
     from test_batched_eval import Tokenizer, install_core
 
     from eval import engines, english_engines
@@ -35,17 +36,26 @@ def test_subset_is_filtered_before_loading_and_shared_evaluator_resumes(tmp_path
         return engine, None
     monkeypatch.setattr(runner, "load_eval_sets", loader)
     monkeypatch.setattr(runner, "resolve_model", lambda model, revision, token: (revision, "digest"))
-    monkeypatch.setattr(runner, "git_identity", lambda: "commit")
+    def git_identity():
+        assert not bundled, "Self-contained evaluation must not require Git"
+        return "commit"
+    monkeypatch.setattr(runner, "git_identity", git_identity)
     monkeypatch.setattr(runner, "package_versions", lambda: {"runtime": "fixed"})
     monkeypatch.setattr(engines, "check_hardware", lambda config: {"gpu": "test"})
     monkeypatch.setattr(english_engines, "create_engine", create)
     monkeypatch.setattr(sys, "argv", ["eval", "--model", spec["base_model"]["repo"], "--revision",
                                       spec["base_model"]["revision"], "--run-name", "base",
-                                      "--config", str(CONFIG), "--output-root", str(tmp_path), "--smoke"])
+                                      "--config", str(CONFIG), "--output-root", str(tmp_path), "--smoke"]
+                        + (["--bundled-code"] if bundled else []))
     runner.main()
     first = json.loads((tmp_path / "smoke/results/base.json").read_text())
     assert set(first["metrics"]) == {"amc23", "math_500"}
     assert all(m["responses"] == 1 and m["avg@1"] == 1 for m in first["metrics"].values())
+    if bundled:
+        from eval.answer_only import evaluation_code_digest
+
+        assert first["bundle_digest"] == evaluation_code_digest()
+        assert "git_commit" not in first
     assert len(cores[0].calls) == 2
     assert all(p.temperature == 0 and p.n == 1 for _, _, p in cores[0].calls)
     runner.main()

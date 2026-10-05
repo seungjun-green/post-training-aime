@@ -6,13 +6,18 @@ from collections import Counter
 from pathlib import Path
 
 from common.english_prompts import messages, render_prompt
-from common.io import digest
+from common.io import digest, read_jsonl
 
 
 def load_rows(config, token=None, local_rows=None):
-    """A local preparation export is supported for offline, CPU-only data inspection."""
+    """Load a pinned HF dataset, training JSONL snapshot, or preparation export."""
     spec = config["data"]
-    if local_rows is not None:
+    if spec.get("source") == "jsonl":
+        if local_rows is not None:
+            raise ValueError("Use the pinned JSONL path in config for answer-only training")
+        rows = read_jsonl(spec["path"])
+        ids = [f"regenerated:{i}" for i in range(len(rows))]
+    elif local_rows is not None:
         envelopes = [json.loads(line) for line in Path(local_rows).read_text().splitlines()]
         rows = [row["original"] for row in envelopes]
         ids = [row["id"] for row in envelopes]
@@ -32,9 +37,9 @@ def load_rows(config, token=None, local_rows=None):
             raise ValueError("Published provenance does not match the configured s1K content")
         ids = provenance["retained_preparation_ids"]
     if len(rows) != spec["expected_rows"] or digest(rows) != spec["content_digest"]:
-        raise ValueError("Training rows differ from the pinned, decontaminated s1K dataset")
+        raise ValueError("Training rows differ from the pinned dataset")
     if len(ids) != len(rows) or len(set(ids)) != len(ids) or digest(ids) != spec["ids_digest"]:
-        raise ValueError("Training IDs differ from the decontamination provenance")
+        raise ValueError("Training IDs differ from the pinned dataset provenance")
     return rows, ids
 
 
@@ -42,12 +47,15 @@ DEFAULT_COLUMNS = {"question": "question", "reasoning": "deepseek_thinking_traje
                    "answer": "deepseek_attempt"}
 
 
-def format_example(tokenizer, row, columns=None):
+def format_example(tokenizer, row, columns=None, response_format="reasoning_and_answer"):
     columns = columns or DEFAULT_COLUMNS
-    for column in columns.values():
+    if response_format not in {"answer_only", "reasoning_and_answer"}:
+        raise ValueError(f"Unknown response format: {response_format}")
+    required = ["question", "answer"] if response_format == "answer_only" else list(columns)
+    for column in (columns[key] for key in required):
         if not isinstance(row[column], str) or not row[column].strip():
             raise ValueError(f"Missing training text: {column}")
-    assistant = (
+    assistant = row[columns["answer"]] if response_format == "answer_only" else (
         "<think>\n" + row[columns["reasoning"]]
         + "\n</think>\n\n" + row[columns["answer"]]
     )
@@ -86,15 +94,17 @@ def percentile(values, fraction):
 def prepare_examples(tokenizer, rows, ids, config):
     examples, lengths, kept_ids, dropped = [], [], [], []
     columns = config["data"].get("columns", DEFAULT_COLUMNS)
+    response_format = config["data"].get("response_format", "reasoning_and_answer")
+    output_keys = ["answer"] if response_format == "answer_only" else ["reasoning", "answer"]
     preview = None
     for row, identifier in zip(rows, ids, strict=True):
         if config["data"].get("drop_missing_outputs", False):
-            missing = [columns[key] for key in ["reasoning", "answer"]
+            missing = [columns[key] for key in output_keys
                        if not isinstance(row.get(columns[key]), str) or not row[columns[key]].strip()]
             if missing:
                 dropped.append({"id": identifier, "reason": "missing_output", "columns": missing})
                 continue
-        example, text = format_example(tokenizer, row, columns)
+        example, text = format_example(tokenizer, row, columns, response_format)
         length = len(example["input_ids"])
         if length > config["max_seq_length"]:
             dropped.append({"id": identifier, "tokens": length})

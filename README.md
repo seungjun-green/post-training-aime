@@ -50,6 +50,39 @@ claimed corrections with raw API reasoning. This prompt is our adaptation of the
 processes discussed in [Kimi k1.5, §2.2](https://arxiv.org/html/2501.12599v1#S2.SS2),
 not its unpublished prompt or a claim that the paper prescribes four sequential stages.
 
+## Answer-only EXAONE SFT — five epochs
+
+Open [`train_stage1_sft_deepseek_pro_answer_only.ipynb`](notebooks/train_stage1_sft_deepseek_pro_answer_only.ipynb)
+on the **RTX PRO 6000 Blackwell 96GB** Colab runtime with `HF_TOKEN` enabled in Secrets.
+This self-contained notebook starts from **EXAONE-3.5-2.4B-Instruct** and trains all parameters
+for **5 epochs**, using only `deepseek-v4-pro_answer` as the assistant response. The whole
+structured worked solution is retained. No raw API reasoning, old s1 answer, or additional
+`<think>`/`<answer>` wrapper is included. Loss covers the answer and native EOT only.
+
+Set `DATASET_PATH` to the generated Drive JSONL (the default points to the latest partial
+export), run preparation, then set `RUN_TRAINING = True` in the training cell. Empty answers
+are skipped; the current partial export has 989 nonempty answers out of 996 rows. Preparation
+reports any sequences above 20,480 tokens, with no truncation or correctness filtering.
+Training uses batch size 1, accumulation 16, learning rate 1e-5, BF16, and gradient checkpointing.
+
+The notebook pins a question/answer snapshot and its digests under
+`LG-AIME-Stage1-AnswerOnly/inputs/<run_name>/`. Changing data/settings requires a new run name.
+Every epoch is saved under `checkpoints/stage1/<run_name>/epoch_N` with optimizer/scheduler/RNG
+state; logs are under `logs/stage1/<run_name>/`. Allow at least 100 GB of Drive space.
+Resume from the latest complete epoch using `RESUME_CHECKPOINT`; five epochs remains the total.
+Rebuild with `python scripts/build_answer_only_sft_notebook.py`.
+
+Evaluate the trained model with
+[`evaluate_stage1_sft_answer_only_amc_math.ipynb`](notebooks/evaluate_stage1_sft_answer_only_amc_math.ipynb).
+This self-contained notebook defaults to the answer-only run's **epoch 5**, with **temperature 0**,
+top-p 1, and one response for each of **40 AMC 2023 + 500 MATH-500 problems**. It uses the same
+English prompt and final-box scorer, a 20,480-token response cap, and no budget forcing.
+Run on the RTX PRO 6000 96GB with `HF_TOKEN`; confirm `TRAIN_ROOT` and `TRAIN_RUN_NAME`,
+then set `RUN_EVAL = True`. An optional two-problem smoke test is in a separate cell.
+Accuracy, token lengths, full responses, and resumable problem records are saved under
+`TRAIN_ROOT/evaluation_amc_math_temp0/<run_name>/epoch_5/`. No baseline run or GitHub push is needed.
+Rebuild with `python scripts/build_answer_only_eval_notebook.py`.
+
 ## Upload existing DeepSeek results to Hugging Face
 
 Open [`upload_s1_deepseek_to_huggingface.ipynb`](notebooks/upload_s1_deepseek_to_huggingface.ipynb)

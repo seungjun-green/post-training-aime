@@ -16,7 +16,6 @@ sys.path.insert(0, str(ROOT))
 import yaml  # noqa: E402
 
 from common.io import digest, read_jsonl, write_json, write_jsonl  # noqa: E402
-from eval.run_english_eval import code_fingerprint, git_identity  # noqa: E402
 from train.sft_data import (  # noqa: E402
     AssistantCollator,
     load_rows,
@@ -29,7 +28,8 @@ def load_config(path):
     config = yaml.safe_load(Path(path).read_text())
     # Resolve a published Pro dataset once; all subsequent reads and the saved run
     # manifest use this immutable commit, never the moving branch name.
-    if config["data"]["revision"] == "main":
+    local_jsonl = config["data"].get("source") == "jsonl"
+    if not local_jsonl and config["data"]["revision"] == "main":
         from huggingface_hub import HfApi
 
         config["data"]["revision"] = HfApi().dataset_info(
@@ -38,9 +38,15 @@ def load_config(path):
     for field in ["stage", "run_name"]:
         if not re.fullmatch(r"[A-Za-z0-9_-]+", config[field]):
             raise ValueError(f"Unsafe {field}")
-    for section in ["model", "data"]:
+    for section in (["model"] if local_jsonl else ["model", "data"]):
         if not re.fullmatch(r"[a-f0-9]{40}", config[section]["revision"]):
             raise ValueError(f"Pin {section} to an immutable revision")
+    if local_jsonl:
+        for field in ["content_digest", "ids_digest"]:
+            if not re.fullmatch(r"[a-f0-9]{64}", str(config["data"].get(field))):
+                raise ValueError("Prepare a pinned JSONL snapshot before training")
+        if not config["data"].get("path"):
+            raise ValueError("Missing pinned JSONL path")
     training = config["training"]
     if training["packing"] or training["max_length"] is not None:
         raise ValueError("Packing and TRL truncation must remain disabled")
@@ -187,7 +193,14 @@ def main():
     from train.sft_trainer import Stage1Trainer
 
     hardware = check_hardware(config)
-    commit = git_identity()
+    if config["data"].get("source") == "jsonl":
+        from train.answer_only import training_code_digest
+
+        code_identity = {"training_code_digest": training_code_digest()}
+    else:
+        from eval.run_english_eval import code_fingerprint, git_identity
+
+        code_identity = {"git_commit": git_identity(), "frozen_eval_code_digest": code_fingerprint()}
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
     packages = {name: importlib.metadata.version(name) for name in [
@@ -200,9 +213,9 @@ def main():
     )
     attention, attention_notes = choose_attention(config, model_config)
     manifest = {
-        "config": config, "git_commit": commit, "hardware": hardware, "packages": packages,
+        "config": config, **code_identity, "hardware": hardware, "packages": packages,
         "attention": attention, "attention_notes": attention_notes,
-        "data_report_digest": digest(report), "frozen_eval_code_digest": code_fingerprint(),
+        "data_report_digest": digest(report),
         "tokenizer": original_tokenizer,
     }
     identity = digest(manifest)

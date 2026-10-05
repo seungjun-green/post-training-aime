@@ -43,6 +43,8 @@ def main():
     parser.add_argument("--output-root", required=True)
     parser.add_argument("--config", default=str(ROOT / "configs/dapo_compare_eval.yaml"))
     parser.add_argument("--smoke", action="store_true")
+    parser.add_argument("--bundled-code", action="store_true",
+                        help="Identify self-contained notebook code by its bundle digest")
     args = parser.parse_args()
     if not re.fullmatch(r"[A-Za-z0-9_-]+", args.run_name):
         parser.error("Invalid run name")
@@ -63,9 +65,15 @@ def main():
     saved = json.loads(manifest_path.read_text()) if manifest_path.exists() else None
     revision, model_digest = resolve_model(args.model, select_model_revision(args.model, args.revision, saved),
                                            os.getenv("HF_TOKEN"))
+    if args.bundled_code:
+        from eval.answer_only import evaluation_code_digest
+
+        code_identity = {"bundle_digest": evaluation_code_digest()}
+    else:
+        code_identity = {"git_commit": git_identity()}
     metadata = {
         "model": args.model, "model_revision": revision, "model_digest": model_digest,
-        "git_commit": git_identity(), "run_name": args.run_name,
+        **code_identity, "run_name": args.run_name,
         "mode": "smoke" if args.smoke else "full", "config": config,
         "execution": execution, "protocol_digest": protocol, "dataset_suite": suite,
         "selected_ids": selected, "packages": package_versions(), "hardware": check_hardware(config),
