@@ -1,0 +1,96 @@
+# Qwen2.5-3B-Instruct, full-parameter DAPO on one 96GB GPU.
+run_name_prefix: dapo_qwen25_3b
+model:
+  repo: Qwen/Qwen2.5-3B-Instruct
+  revision: aa8e72537993ba99e69dfaafa59ed015b17504d1
+  trust_remote_code: false
+tokenizer:
+  eos_token: <|im_end|>
+  pad_token: <|endoftext|>
+generation:
+  stop_tokens:
+  - <|im_end|>
+data:
+  repo: Seungjun/dp_removed_DAPO-Math-17k-Processed
+  revision: main
+  config: en
+  split: train
+  expected_rows: 14068
+  content_digest: eed1e16f214d48c62e3fe673bc9788c3a3a205d67ff8ccb1b73f78d6c4b38f1b
+  ids_digest: f8ddd5fa90539610a398faad498c1fc47de5cf98d52604787b090455df6f962b
+  max_prompt_tokens: 12288
+hardware:
+  name_contains: RTX PRO 6000
+  min_memory_gib: 90
+algorithm:
+  # One pass: 128 rollout responses, split into two disjoint 64-response updates.
+  num_iterations: 1
+  mini_batch_size: 64
+  group_size: 8
+  retained_groups: 16
+  candidate_groups_per_batch: 16
+  max_generation_batches: 10
+  correct_reward: 1.0
+  incorrect_reward: -1.0
+  soft_length_limit: 16384
+  max_completion_length: 20480
+  length_penalty_factor: 1.0
+  verify_timeout_seconds: 5
+  temperature: 1.0
+  top_p: 1.0
+  epsilon: 0.2
+  epsilon_high: 0.28
+  beta: 0.0
+  scale_rewards: group
+  loss_type: dapo
+  # The reference verl recipe uses soft shaping without masking truncated outputs.
+  mask_truncated_completions: false
+  importance_sampling_cap: 2.0
+  logprob_chunk_tokens: 128
+training:
+  max_steps: 300
+  save_steps: 20
+  per_device_train_batch_size: 1
+  learning_rate: 1.0e-6
+  warmup_steps: 20
+  lr_scheduler_type: constant_with_warmup
+  optim: adamw_torch
+  adam_beta1: 0.9
+  adam_beta2: 0.95
+  adam_epsilon: 1.0e-8
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  # FP32 trainable/master weights and Adam state; BF16 autocast and rollout weights.
+  bf16: true
+  fp16: false
+  tf32: false
+  gradient_checkpointing: true
+  gradient_checkpointing_kwargs:
+    use_reentrant: false
+  seed: 42
+  data_seed: 42
+  logging_steps: 1
+  logging_nan_inf_filter: false
+  report_to: []
+  disable_tqdm: false
+  dataloader_num_workers: 0
+  save_safetensors: true
+  save_total_limit: null
+rollout:
+  dtype: bfloat16
+  gpu_memory_utilization: 0.35
+  max_num_seqs: 16
+  max_num_batched_tokens: 4096
+  max_model_len: 32768
+  tensor_parallel_size: 1
+  enable_sleep_mode: true
+  enforce_eager: true
+smoke:
+  mini_batch_size: 8
+  max_steps: 2
+  save_steps: 2
+  warmup_steps: 0
+  retained_groups: 2
+  candidate_groups_per_batch: 2
+  max_generation_batches: 10
+  # Keep G and the full response cap so smoke exercises real rollout lengths.

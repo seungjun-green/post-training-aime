@@ -1,0 +1,12 @@
+models:
+  base:
+    repo: Qwen/Qwen2.5-3B
+    revision: 3aab1f1954e9cc14eb9509a215f9e5ca08227a9b
+  instruct:
+    repo: Qwen/Qwen2.5-3B-Instruct
+    revision: aa8e72537993ba99e69dfaafa59ed015b17504d1
+benchmarks: [amc23, math_500]
+profile: greedy
+evaluation_config: configs/eval_english.yaml
+suite: configs/english_eval_suite.json
+execution_config: configs/eval_execution.yaml

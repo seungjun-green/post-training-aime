@@ -1,0 +1,34 @@
+{
+  "source": "/Users/seungjunlee/Downloads/sft_s1k_deepseek_pro_answer_only_epoch5_generations.jsonl",
+  "sha256": "0fb20bcd76f920b4a6daf31cb938177880704b69e169890a288a0ce0b6aed4d5",
+  "rows": 540,
+  "rescoring_changed_records": 0,
+  "source_question_or_gold_mismatches": 0,
+  "confirmed_false_negative_source_lines_1_based": [
+    320,
+    420
+  ],
+  "note": "Corrections below count only two confirmed final-answer equivalence failures. They do not certify correctness of reasoning or count correct values appearing only in the body. No original scores or scorer code were changed.",
+  "benchmarks": {
+    "amc23": {
+      "problems": 40,
+      "original_correct": 4,
+      "original_accuracy_percent": 10.0,
+      "confirmed_false_negatives": 0,
+      "correct_after_confirmed_adjustments": 4,
+      "accuracy_after_confirmed_adjustments_percent": 10.0,
+      "missing_box": 2,
+      "length_limit": 2
+    },
+    "math_500": {
+      "problems": 500,
+      "original_correct": 205,
+      "original_accuracy_percent": 41.0,
+      "confirmed_false_negatives": 2,
+      "correct_after_confirmed_adjustments": 207,
+      "accuracy_after_confirmed_adjustments_percent": 41.4,
+      "missing_box": 6,
+      "length_limit": 6
+    }
+  }
+}

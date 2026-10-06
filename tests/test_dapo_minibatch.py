@@ -9,7 +9,7 @@ from train.dapo_data import batch_schedule, load_config
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.parametrize("filename", ["dapo_minibatch.yaml", "dapo_llama32_3b_minibatch.yaml"])
+@pytest.mark.parametrize("filename", ["dapo_minibatch.yaml", "dapo_llama32_3b_minibatch.yaml", "dapo_qwen25_3b.yaml"])
 def test_minibatch_schedule_and_smoke(filename, tmp_path):
     config = load_config(ROOT / "configs" / filename)
     smoke = load_config(ROOT / "configs" / filename, smoke=True)

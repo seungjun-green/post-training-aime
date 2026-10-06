@@ -1,0 +1,19 @@
+source:
+  repo: Seungjun/dp_removed_s1K-1.1
+  revision: 6d177bf60a195dc3c2b43de6a8eff12405a1c942
+  config: default
+  split: train
+  expected_rows: 996
+  content_digest: 67542f5ef32f9e7f3750a3b9240e54067d7ec7004162ae8d3ac20296929af635
+target:
+  repo: Seungjun/dp_removed_s1K-1.1
+  revision: main
+  config: default
+  split: train
+model: deepseek-v4-pro
+answer_column: deepseek-v4-pro_answer
+new_column: kimi-style-reasoning-answer
+files:
+  dataset: /content/drive/MyDrive/LG-AIME-S1-DeepSeek/runs/deepseek-v4-pro/63d2e34487188421/full/dataset.partial.jsonl
+  status: /content/drive/MyDrive/LG-AIME-S1-DeepSeek/runs/deepseek-v4-pro/63d2e34487188421/full/status.jsonl
+  receipt_directory: /content/drive/MyDrive/LG-AIME-S1-DeepSeek/hf_uploads/kimi-style-reasoning-answer

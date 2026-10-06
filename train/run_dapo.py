@@ -27,33 +27,42 @@ from train.dapo_resume import (  # noqa: E402
     check_checkpoint,
     check_extension_runtime,
     extension_source,
+    recovery_source,
 )
 from train.stage1_sft import check_hardware, tokenizer_identity  # noqa: E402
 
 
-def validate_resume(checkpoints, log_dir, resume, identity):
+def validate_resume(checkpoints, log_dir, resume, identity, recovery=None):
     complete = sorted((p for p in checkpoints.glob("checkpoint-*") if (p / "dapo_checkpoint.json").is_file()),
                       key=lambda p: int(p.name.split("-")[-1]))
     if not resume:
-        if (log_dir / "run_manifest.json").exists() or any(checkpoints.iterdir()):
+        manifest_path = log_dir / "run_manifest.json"
+        if not manifest_path.exists() and not any(checkpoints.iterdir()):
+            return
+        # A recovery attempt can fail before its first new checkpoint. Retry the
+        # same parent without overwriting/relabeling a different run's artifacts.
+        if (not recovery or complete or not manifest_path.is_file()
+                or json.loads(manifest_path.read_text())["identity"] != identity):
             raise ValueError("Existing DAPO run: resume the latest completed checkpoint or select a new OUTPUT_ROOT")
-        return
-    path = Path(resume).resolve()
-    if not complete or complete[-1].resolve() != path:
-        raise ValueError("Resume only the latest completed DAPO checkpoint")
-    old = json.loads((log_dir / "run_manifest.json").read_text())
-    marker = json.loads((path / "dapo_checkpoint.json").read_text())
-    if old["identity"] != identity or marker["run_identity"] != identity:
-        raise ValueError("DAPO source, data, settings, code or runtime changed")
+        cutoff = recovery["from_step"]
+    else:
+        path = Path(resume).resolve()
+        if not complete or complete[-1].resolve() != path:
+            raise ValueError("Resume only the latest completed DAPO checkpoint")
+        old = json.loads((log_dir / "run_manifest.json").read_text())
+        marker = json.loads((path / "dapo_checkpoint.json").read_text())
+        if old["identity"] != identity or marker["run_identity"] != identity:
+            raise ValueError("DAPO source, data, settings, code or runtime changed")
+        cutoff = marker["global_step"]
     # Preserve partial checkpoint directories rather than treating them as completed.
     for folder in checkpoints.glob("checkpoint-*"):
         if not (folder / "dapo_checkpoint.json").is_file():
             folder.rename(checkpoints / f"incomplete_{folder.name}_{time.time_ns()}")
     records = read_jsonl(log_dir / "steps.jsonl", repair_tail=True)
-    abandoned = [r for r in records if r["step"] > marker["global_step"]]
+    abandoned = [r for r in records if r["step"] > cutoff]
     if abandoned:
         write_jsonl(log_dir / f"abandoned_steps_{time.time_ns()}.jsonl", abandoned)
-        write_jsonl(log_dir / "steps.jsonl", [r for r in records if r["step"] <= marker["global_step"]])
+        write_jsonl(log_dir / "steps.jsonl", [r for r in records if r["step"] <= cutoff])
 
 
 def main():
@@ -67,12 +76,16 @@ def main():
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--resume-from-checkpoint")
     parser.add_argument("--extend-from-checkpoint", help="Continue a completed run into a separate output root")
+    parser.add_argument("--recover-from-checkpoint", help="Recover interrupted Qwen DAPO with the memory fix in a new root")
     parser.add_argument("--local-data", help="Offline preparation only: verified envelope JSONL")
     parser.add_argument("--local-tokenizer", help="Offline preparation only: pinned tokenizer snapshot")
     args = parser.parse_args()
     if (args.local_data or args.local_tokenizer) and not args.prepare_only:
         parser.error("Local input overrides are only for preparation")
-    if args.smoke and (args.prepare_only or args.resume_from_checkpoint or args.extend_from_checkpoint):
+    if args.recover_from_checkpoint and args.extend_from_checkpoint:
+        parser.error("Recovery and step-budget extension cannot be combined")
+    if args.smoke and (args.prepare_only or args.resume_from_checkpoint or args.extend_from_checkpoint
+                       or args.recover_from_checkpoint):
         parser.error("Smoke must be a separate fresh training run")
     config = load_config(args.config, smoke=args.smoke)
     config["model_kind"] = args.model_kind
@@ -81,9 +94,13 @@ def main():
     checkpoints = root / "checkpoints" / name
     log_dir = root / "logs" / name
     parent_manifest = continuation = None
+    recovery = None
     if args.extend_from_checkpoint:
         parent_manifest, continuation = extension_source(config, args.extend_from_checkpoint, root)
-    resume_checkpoint = args.resume_from_checkpoint or args.extend_from_checkpoint
+    if args.recover_from_checkpoint:
+        parent_manifest, recovery = recovery_source(config, args.recover_from_checkpoint, root)
+    resume_checkpoint = (args.resume_from_checkpoint or args.recover_from_checkpoint
+                         or args.extend_from_checkpoint)
     if resume_checkpoint:
         marker, _ = check_checkpoint(resume_checkpoint)
         if marker["global_step"] % batch_schedule(config)["updates_per_rollout"]:
@@ -136,10 +153,13 @@ def main():
     if continuation:
         check_extension_runtime(parent_manifest, manifest)
         manifest["continuation"] = continuation
+    if recovery:
+        check_extension_runtime(parent_manifest, manifest)
+        manifest["recovery"] = recovery
     identity = digest(manifest)
     checkpoints.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
-    validate_resume(checkpoints, log_dir, args.resume_from_checkpoint, identity)
+    validate_resume(checkpoints, log_dir, args.resume_from_checkpoint, identity, recovery)
     write_json(previous_manifest, {**manifest, "identity": identity})
     write_json(log_dir / "data_report.json", report)
     (log_dir / "config.yaml").write_text(yaml.safe_dump(config, sort_keys=False))

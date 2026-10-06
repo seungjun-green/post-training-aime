@@ -20,6 +20,7 @@ from trl import GRPOConfig, GRPOTrainer
 
 from common.io import append_jsonl, write_json, write_jsonl
 from train.dapo_data import batch_schedule
+from train.dapo_logps import chunked_lm_head_logps
 from train.dapo_sampling import collect_groups
 
 
@@ -158,12 +159,31 @@ class DAPOTrainer(GRPOTrainer):
         prompt_width = input_ids.shape[1] - logits_to_keep
         all_logps, all_entropies = [], []
         chunk = self.dapo_config["algorithm"]["logprob_chunk_tokens"]
+        unwrapped = self.accelerator.unwrap_model(model)
+        chunk_projection = unwrapped.config.model_type == "qwen2"
         for ids, mask in zip(input_ids, attention_mask, strict=True):
             p = int(mask[:prompt_width].sum())
             c = int(mask[prompt_width:].sum())
             if not p or not c:
                 raise ValueError("Empty prompt or completion in DAPO loss")
             unpadded = ids[mask.bool()].unsqueeze(0)
+            if chunk_projection:
+                # Calling the decoder directly bypasses Accelerate's top-level
+                # forward wrapper. Restore its autocast context explicitly. The
+                # decoder's native gradient checkpointing remains enabled.
+                with self.accelerator.autocast():
+                    hidden = unwrapped.model(
+                        input_ids=unpadded, attention_mask=torch.ones_like(unpadded),
+                        use_cache=False, return_dict=True,
+                    ).last_hidden_state[0, p - 1:p + c - 1]
+                    logps, entropy = chunked_lm_head_logps(
+                        hidden, unwrapped.get_output_embeddings(), unpadded[0, p:],
+                        self.temperature, chunk, compute_entropy,
+                    )
+                all_logps.append(F.pad(logps, (0, logits_to_keep - c)))
+                if compute_entropy:
+                    all_entropies.append(F.pad(entropy, (0, logits_to_keep - c)))
+                continue
             logits = model(input_ids=unpadded, attention_mask=torch.ones_like(unpadded),
                            use_cache=False).logits[0, p - 1:p + c - 1]
             targets = unpadded[0, p:]

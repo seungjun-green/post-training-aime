@@ -83,11 +83,15 @@ def test_rollout_receives_all_llama_stops_and_keeps_eom_tokens(tmp_path, monkeyp
                and r["finish_reason"] == "stop" for r in groups[0])
 
 
-def test_llama_notebook_smoke_full_and_resume_commands(tmp_path, monkeypatch):
+@pytest.mark.parametrize("family", ["llama", "qwen"])
+def test_llama_notebook_smoke_full_and_resume_commands(tmp_path, monkeypatch, family):
+    from importlib import import_module
+
     nbformat = pytest.importorskip("nbformat")
     monkeypatch.syspath_prepend(str(ROOT / "scripts"))
-    from build_llama_dapo_notebook import cells
-    nb = nbformat.read(ROOT / "notebooks/train_dapo_llama32_3b.ipynb", as_version=4)
+    cells = import_module(f"build_{family}_dapo_notebook").cells
+    notebook_name = "train_dapo_llama32_3b.ipynb" if family == "llama" else "train_dapo_qwen25_3b.ipynb"
+    nb = nbformat.read(ROOT / "notebooks" / notebook_name, as_version=4)
     nbformat.validate(nb)
     assert [c.source for c in nb.cells] == [c.source for c in cells()]
     codes = [c.source for c in nb.cells if c.cell_type == "code"]
@@ -96,7 +100,7 @@ def test_llama_notebook_smoke_full_and_resume_commands(tmp_path, monkeypatch):
         assert "@param" not in source and "eval.run_" not in source
     context = {"Path": Path, "json": json}
     exec(codes[0], context)
-    assert "Llama32-3B" in context["OUTPUT_ROOT"]
+    assert ("Llama32-3B" if family == "llama" else "Qwen25-3B") in context["OUTPUT_ROOT"]
     context.update(CODE_ROOT=str(ROOT), OUTPUT_ROOT=str(tmp_path))
     exec(next(s for s in codes if "TRAIN_COMMAND =" in s), context)
     assert "--sft-root" not in context["TRAIN_COMMAND"]

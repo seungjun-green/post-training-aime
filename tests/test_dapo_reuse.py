@@ -32,14 +32,21 @@ def test_reuse_config_and_cycle_boundaries(tmp_path):
     assert "num_iterations" not in load_config(ROOT / "configs/dapo_continue_300.yaml")["algorithm"]
 
 
-@pytest.mark.parametrize("llama", [False, True])
+@pytest.mark.parametrize("model_kind", ["exaone", "llama", "qwen"])
 @pytest.mark.parametrize("minibatch", [False, True])
-def test_clipped_gradients_fixed_old_policy_and_exact_resume(tmp_path, llama, minibatch):
+def test_clipped_gradients_fixed_old_policy_and_exact_resume(tmp_path, model_kind, minibatch):
     torch = pytest.importorskip("torch")
     pytest.importorskip("trl")
     from datasets import Dataset
     from test_llama_lora_sft import tokenizer_fixture
-    from transformers import LlamaConfig, LlamaForCausalLM, TrainerCallback, set_seed
+    from transformers import (
+        LlamaConfig,
+        LlamaForCausalLM,
+        Qwen2Config,
+        Qwen2ForCausalLM,
+        TrainerCallback,
+        set_seed,
+    )
 
     from train.dapo_model import configure_tokenizer
     from train.dapo_trainer import DAPOTrainer, make_arguments
@@ -47,10 +54,16 @@ def test_clipped_gradients_fixed_old_policy_and_exact_resume(tmp_path, llama, mi
     torch.set_num_threads(1)
     set_seed(42)
     tokenizer = tokenizer_fixture()
+    llama = model_kind == "llama"
     cfg = load_config(ROOT / "configs" / ("dapo_llama32_3b.yaml" if llama else "dapo_reuse.yaml"))
     if llama:
         tokenizer.add_special_tokens({"additional_special_tokens": [
             "<|eot_id|>", "<|end_of_text|>", "<|eom_id|>", "<|finetune_right_pad_id|>"]})
+        configure_tokenizer(tokenizer, cfg)
+    if model_kind == "qwen":
+        qwen = load_config(ROOT / "configs/dapo_qwen25_3b.yaml")
+        cfg.update({key: qwen[key] for key in ["model", "tokenizer", "generation"]})
+        tokenizer.add_special_tokens({"additional_special_tokens": ["<|im_start|>", "<|im_end|>", "<|endoftext|>"]})
         configure_tokenizer(tokenizer, cfg)
     cfg["model_kind"] = "base"
     cfg["algorithm"].update(group_size=2, retained_groups=2, candidate_groups_per_batch=2,
@@ -65,10 +78,12 @@ def test_clipped_gradients_fixed_old_policy_and_exact_resume(tmp_path, llama, mi
     cfg["data"]["max_prompt_tokens"] = 500
     rows = [{"prompt": "What is 2+2?" + " Please calculate." * i, "solution": "4"} for i in range(8)]
     prepared, _ = prepare_data(rows, list(map(str, range(8))), tokenizer, cfg)
-    initial = LlamaForCausalLM(LlamaConfig(
+    model_class = Qwen2ForCausalLM if model_kind == "qwen" else LlamaForCausalLM
+    config_class = Qwen2Config if model_kind == "qwen" else LlamaConfig
+    initial = model_class(config_class(
         vocab_size=len(tokenizer), hidden_size=16, intermediate_size=32, num_hidden_layers=1,
         num_attention_heads=2, num_key_value_heads=1, max_position_embeddings=1024,
-        tie_word_embeddings=llama,
+        tie_word_embeddings=model_kind in {"llama", "qwen"},
         eos_token_id=tokenizer.eos_token_id, pad_token_id=tokenizer.pad_token_id, use_cache=False))
 
     def logps(model, prompt, completion):

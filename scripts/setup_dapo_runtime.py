@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--venv", default="/content/lg-dapo-env")
-    parser.add_argument("--architecture", choices=["ExaoneForCausalLM", "LlamaForCausalLM"],
+    parser.add_argument("--architecture", choices=["ExaoneForCausalLM", "LlamaForCausalLM", "Qwen2ForCausalLM"],
                         default="ExaoneForCausalLM")
     args = parser.parse_args()
     python = Path(args.venv) / "bin/python"

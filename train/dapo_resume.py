@@ -76,3 +76,35 @@ def check_extension_runtime(previous, manifest):
     for key in ["source", "data_report_digest", "packages", "parameter_precision", "compute_precision"]:
         if previous[key] != manifest[key]:
             raise ValueError(f"Continuation changed {key}; use the original source, data and runtime")
+
+
+def recovery_source(config, checkpoint, output_root):
+    """Restart an interrupted Qwen run with the memory fix in a separate output root.
+
+    Restore the original optimizer/scheduler/RNG without relaxing ordinary resume
+    identity checks. Only the implementation changes; every training setting stays.
+    """
+    path = Path(checkpoint).resolve()
+    marker, state = check_checkpoint(path)
+    original_root = path.parents[2]
+    if Path(output_root).resolve() == original_root:
+        raise ValueError("Use a separate OUTPUT_ROOT for memory-fix recovery")
+    previous = json.loads((original_root / "logs" / path.parent.name / "run_manifest.json").read_text())
+    if marker["run_identity"] != previous["identity"]:
+        raise ValueError("Recovery checkpoint does not match its run manifest")
+    if (config["model"]["repo"] != "Qwen/Qwen2.5-3B-Instruct"
+            or config["model_kind"] != "base" or marker["model_kind"] != "base"):
+        raise ValueError("Memory-fix recovery is for the base-started Qwen DAPO run")
+    original = previous["config"]
+    if config["data"]["revision"] == "main":
+        config["data"]["revision"] = original["data"]["revision"]
+    if config != original:
+        raise ValueError("Recovery must preserve all original training settings")
+    step, limit = marker["global_step"], config["training"]["max_steps"]
+    if not 0 < step < limit or state["max_steps"] != limit:
+        raise ValueError("Recover an interrupted run before its configured final step")
+    return previous, {
+        "reason": "chunked_qwen_lm_head_v1", "checkpoint": str(path),
+        "parent_run_identity": previous["identity"], "parent_git_commit": previous["git_commit"],
+        "from_step": step, "target_step": limit,
+    }

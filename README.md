@@ -2,6 +2,43 @@
 
 The current direction keeps `LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct` and uses the original English datasets. Translation is no longer part of the active data pipeline; earlier translation notebooks remain available as historical experiments.
 
+## Qwen2.5-3B-Instruct DAPO
+
+[`train_dapo_qwen25_3b.ipynb`](notebooks/train_dapo_qwen25_3b.ipynb) runs full-parameter
+DAPO from pinned `Qwen/Qwen2.5-3B-Instruct`. It uses the latest EXAONE experiment's
+training settings: G=8, 128 retained responses split into two disjoint 64-response updates,
+300 optimizer steps, LR 1e-6 and checkpoints every 20 steps. Each response is used once.
+The response cap is 20,480 tokens with a soft penalty above 16,384; rewards are rule-based.
+The shared trainer and English instruction are reused with Qwen's native chat template,
+EOS `<|im_end|>` and separate padding `<|endoftext|>`.
+
+The notebook bundles the code, [config](configs/dapo_qwen25_3b.yaml), and runtime locks;
+no GitHub push is required. Preparation, GPU smoke and full training are separate cells,
+with plain variables and checkpoint recovery. Default Drive root is
+`/content/drive/MyDrive/LG-AIME-DAPO-Qwen25-3B-MiniBatch300-MemoryFix`, with checkpoints under
+`checkpoints/dapo_qwen25_3b_base/` and logs under `logs/dapo_qwen25_3b_base/`.
+Run the GPU smoke on the RTX PRO 6000 96GB before full training. Full resumable checkpoints
+are retained every 20 steps; together with smoke, plan for approximately 650 GB of Drive storage.
+This notebook trains only; it does not run benchmark evaluation or archive model weights for sharing.
+
+The memory fix projects Qwen's decoder states through the LM head **inside** 128-token
+checkpointed chunks, including log-probabilities and entropy, so a 20,480-token completion
+does not allocate a full sequence-by-vocabulary logits/gradient tensor. The native decoder
+retains gradient checkpointing and BF16 autocast; FP32 parameters, tied embeddings, DAPO
+normalization and all training hyperparameters are preserved. CPU tests compare log-probabilities,
+entropy and gradients, bound projection sizes for a 20,480-token completion, and exercise
+the real TRL update/save/resume loop. Full-size GPU memory fit still needs the target runtime.
+
+After the reported CUDA OOM, open the rebuilt notebook in a **fresh GPU runtime**. Defaults
+set `RECOVER_FROM_CHECKPOINT` to the original run's `checkpoint-40`. Recovery restores the
+optimizer/scheduler/RNG and replays updates 41 onward, targeting **300 total updates**, in the
+new `-MemoryFix` folder. The original run is preserved, and the new manifest records both code
+identities and the parent checkpoint. All data/settings/runtime checks still apply; this is an
+explicit implementation migration, not an identity-check bypass. Re-running auto-selects the
+latest complete checkpoint in the new folder. Leave `RECOVER_FROM_CHECKPOINT` set for this
+recovery run; set it to an empty string only when starting a fresh experiment in an empty folder.
+Rebuild with `python scripts/build_qwen_dapo_notebook.py`.
+
 ## DeepSeek reasoning regeneration notebook
 
 Open [`regenerate_s1_deepseek.ipynb`](notebooks/regenerate_s1_deepseek.ipynb) on **Colab CPU**
@@ -49,6 +86,17 @@ Assess reflection coverage separately from preservation of actual corrections, a
 claimed corrections with raw API reasoning. This prompt is our adaptation of the cognitive
 processes discussed in [Kimi k1.5, §2.2](https://arxiv.org/html/2501.12599v1#S2.SS2),
 not its unpublished prompt or a claim that the paper prescribes four sequential stages.
+
+## Publish the Kimi-style answer column
+
+Open [`upload_s1_kimi_answer_to_huggingface.ipynb`](notebooks/upload_s1_kimi_answer_to_huggingface.ipynb)
+on Colab CPU with a write-capable `HF_TOKEN`. It reads Drive run `63d2e34487188421`
+and copies `deepseek-v4-pro_answer` verbatim into `kimi-style-reasoning-answer` in
+`Seungjun/dp_removed_s1K-1.1` (`default/train`). Existing columns and all rows are
+preserved; unsuccessful generations keep null answers. Separate cells validate and
+preview, upload, and verify the pinned uploaded revision. Receipts are saved under
+`LG-AIME-S1-DeepSeek/hf_uploads/kimi-style-reasoning-answer/` on Drive.
+Rebuild with `python scripts/build_kimi_upload_notebook.py`.
 
 ## Answer-only EXAONE SFT — five epochs
 
