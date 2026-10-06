@@ -1,0 +1,13 @@
+base_model:
+  repo: Qwen/Qwen2.5-3B
+  revision: 3aab1f1954e9cc14eb9509a215f9e5ca08227a9b
+training_data:
+  repo: Seungjun/dp_removed_s1K-1.1
+  revision: 636ecf409774771afb0bf10a436f4b1e608b5f29
+  config: default
+  split: train
+benchmarks: [amc23, math_500]
+profile: greedy
+evaluation_config: configs/eval_english.yaml
+suite: configs/english_eval_suite.json
+execution_config: configs/eval_execution.yaml

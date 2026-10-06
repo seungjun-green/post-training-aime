@@ -32,7 +32,7 @@ def test_reuse_config_and_cycle_boundaries(tmp_path):
     assert "num_iterations" not in load_config(ROOT / "configs/dapo_continue_300.yaml")["algorithm"]
 
 
-@pytest.mark.parametrize("model_kind", ["exaone", "llama", "qwen"])
+@pytest.mark.parametrize("model_kind", ["exaone", "llama", "qwen", "qwen_base"])
 @pytest.mark.parametrize("minibatch", [False, True])
 def test_clipped_gradients_fixed_old_policy_and_exact_resume(tmp_path, model_kind, minibatch):
     torch = pytest.importorskip("torch")
@@ -60,10 +60,17 @@ def test_clipped_gradients_fixed_old_policy_and_exact_resume(tmp_path, model_kin
         tokenizer.add_special_tokens({"additional_special_tokens": [
             "<|eot_id|>", "<|end_of_text|>", "<|eom_id|>", "<|finetune_right_pad_id|>"]})
         configure_tokenizer(tokenizer, cfg)
-    if model_kind == "qwen":
-        qwen = load_config(ROOT / "configs/dapo_qwen25_3b.yaml")
-        cfg.update({key: qwen[key] for key in ["model", "tokenizer", "generation"]})
+    if model_kind in {"qwen", "qwen_base"}:
+        filename = "dapo_qwen25_3b_base.yaml" if model_kind == "qwen_base" else "dapo_qwen25_3b.yaml"
+        qwen = load_config(ROOT / "configs" / filename)
+        for key in ["model", "tokenizer", "generation"]:
+            if key in qwen:
+                cfg[key] = qwen[key]
+            else:
+                cfg.pop(key, None)
         tokenizer.add_special_tokens({"additional_special_tokens": ["<|im_start|>", "<|im_end|>", "<|endoftext|>"]})
+        if model_kind == "qwen_base":
+            tokenizer.eos_token = tokenizer.pad_token = "<|endoftext|>"
         configure_tokenizer(tokenizer, cfg)
     cfg["model_kind"] = "base"
     cfg["algorithm"].update(group_size=2, retained_groups=2, candidate_groups_per_batch=2,
@@ -78,12 +85,12 @@ def test_clipped_gradients_fixed_old_policy_and_exact_resume(tmp_path, model_kin
     cfg["data"]["max_prompt_tokens"] = 500
     rows = [{"prompt": "What is 2+2?" + " Please calculate." * i, "solution": "4"} for i in range(8)]
     prepared, _ = prepare_data(rows, list(map(str, range(8))), tokenizer, cfg)
-    model_class = Qwen2ForCausalLM if model_kind == "qwen" else LlamaForCausalLM
-    config_class = Qwen2Config if model_kind == "qwen" else LlamaConfig
+    model_class = Qwen2ForCausalLM if model_kind in {"qwen", "qwen_base"} else LlamaForCausalLM
+    config_class = Qwen2Config if model_kind in {"qwen", "qwen_base"} else LlamaConfig
     initial = model_class(config_class(
         vocab_size=len(tokenizer), hidden_size=16, intermediate_size=32, num_hidden_layers=1,
         num_attention_heads=2, num_key_value_heads=1, max_position_embeddings=1024,
-        tie_word_embeddings=model_kind in {"llama", "qwen"},
+        tie_word_embeddings=model_kind in {"llama", "qwen", "qwen_base"},
         eos_token_id=tokenizer.eos_token_id, pad_token_id=tokenizer.pad_token_id, use_cache=False))
 
     def logps(model, prompt, completion):
@@ -203,6 +210,14 @@ def test_clipped_gradients_fixed_old_policy_and_exact_resume(tmp_path, model_kin
     assert [r["reused_rollout"] for r in logs] == ([False] * 4 if minibatch else [False, True, False, True])
     if minibatch:
         assert [r["minibatch_index"] for r in logs] == [1, 2, 1, 2]
+    if model_kind == "qwen_base":
+        assert tokenizer.eos_token_id == tokenizer.pad_token_id
+        for batches in full.seen.values():
+            for batch in batches:
+                active = batch["completion_ids"][batch["completion_mask"].bool()]
+                assert active[-1].item() == tokenizer.eos_token_id
+                assert batch["completion_mask"].sum() == len(active)
+        assert logs[0]["policy_metrics"]["completions/clipped_ratio"] == 0
     assert logs[0]["new_generated_tokens"] > 0 and logs[1]["new_generated_tokens"] == 0
     assert logs[1]["policy_metrics"]["clip_ratio/region_mean"] > 0
     if llama:
@@ -214,6 +229,14 @@ def test_clipped_gradients_fixed_old_policy_and_exact_resume(tmp_path, model_kin
     stopped, _ = make_trainer("resumed", stop=True)
     stopped.train()
     checkpoint = tmp_path / "resumed/weights/checkpoint-2"
+    if model_kind == "qwen_base":
+        from transformers import AutoTokenizer, AutoConfig, GenerationConfig
+
+        saved_tokenizer = AutoTokenizer.from_pretrained(checkpoint)
+        assert saved_tokenizer.eos_token == saved_tokenizer.pad_token == "<|endoftext|>"
+        assert AutoConfig.from_pretrained(checkpoint).eos_token_id == tokenizer.eos_token_id
+        stops = GenerationConfig.from_pretrained(checkpoint).eos_token_id
+        assert (stops if isinstance(stops, list) else [stops]) == [tokenizer.eos_token_id]
     resumed, _ = make_trainer("resumed")
     resumed.train(resume_from_checkpoint=str(checkpoint))
     assert resumed.rollout.steps == [2]

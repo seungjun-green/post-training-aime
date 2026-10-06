@@ -11,9 +11,9 @@ Legend: — = not required; ☐ = pending; ◐ = running; ☑ = complete.
 | ID | Experiment | Training | Evaluation | Next dependency |
 | --- | --- | --- | --- | --- |
 | B0 | Qwen base | — | ☑ Complete (user reported) | — |
-| B-RL | Qwen base + RL | ☐ Planned | ☐ Pending | Base RL notebook/settings |
+| B-RL | Qwen base + RL | ☐ Notebook ready | ☐ Pending | Restart with native EOS notebook; preparation, GPU smoke, then 300-update DAPO |
 | B-SFT1 | Qwen base + SFT-v1 (long: OpenR1-Math-220k) | ☐ Planned | ☐ Pending | User will provide exact HF dataset and columns |
-| B-SFT2 | Qwen base + SFT-v2 (short: Kimi-style DeepSeek) | ☐ Planned | ☐ Pending | Dataset and target column supplied; pin revision/split, confirm question column, and prepare training notebook |
+| B-SFT2 | Qwen base + SFT-v2 (short: Kimi-style DeepSeek) | ☑ Complete (user reported) | ☑ Complete (user reported) | — |
 | B-SFT-RL | Qwen base + SFT + RL | ☐ Planned | ☐ Pending | Decide SFT-v1 or SFT-v2 starting checkpoint |
 | I0 | Qwen instruct | — | ☑ Complete (user reported) | — |
 | I-RL | Qwen instruct + RL | ☑ Complete (user reported) | ☑ Complete (user reported) | — |
@@ -31,7 +31,7 @@ Notebook: [evaluate_qwen25_3b_base_instruct_rl_amc_math.ipynb](notebooks/evaluat
 | B0 | `Qwen/Qwen2.5-3B` @ `3aab1f1954e9cc14eb9509a215f9e5ca08227a9b` | 15 | 37.5% | 1745.6 | 274 | 54.8% | 1444.2 |
 | B-RL | TBD | — | — | — | — | — | — |
 | B-SFT1 | TBD | — | — | — | — | — | — |
-| B-SFT2 | TBD | — | — | — | — | — | — |
+| B-SFT2 | `sft_qwen25_3b_base_s1_kimi/epoch_5` | 10 | 25.0% | 8556.8 | 257 | 51.4% | 6709.7 |
 | B-SFT-RL | TBD | — | — | — | — | — | — |
 | I0 | `Qwen/Qwen2.5-3B-Instruct` @ `aa8e72537993ba99e69dfaafa59ed015b17504d1` | 21 | 52.5% | 1780.1 | 350 | 70.0% | 780.4 |
 | I-RL | MemoryFix `checkpoint-300` | 20 | 50.0% | 1810.4 | 329 | 65.8% | 1012.7 |
@@ -41,27 +41,41 @@ Notebook: [evaluate_qwen25_3b_base_instruct_rl_amc_math.ipynb](notebooks/evaluat
 | ID | Starting model | Training data / target | Epochs or optimizer steps |
 | --- | --- | --- | --- |
 | B0 | `Qwen/Qwen2.5-3B` @ `3aab1f1954e9cc14eb9509a215f9e5ca08227a9b` | None | No training |
-| B-RL | Same base revision as B0 | RL dataset/revision and settings TBD | TBD |
+| B-RL | Same base revision as B0 | `Seungjun/dp_removed_DAPO-Math-17k-Processed`, `en` / `train`; 14,068 verified rows; resolved revision saved in run manifest | 300 optimizer updates; 150 rollout batches |
 | B-SFT1 | Same base revision as B0 | OpenR1-Math-220k; exact HF repo, revision, split, question and target columns pending | TBD |
-| B-SFT2 | Same base revision as B0 | [Seungjun/dp_removed_s1K-1.1](https://huggingface.co/datasets/Seungjun/dp_removed_s1K-1.1); target column: `kimi-style-reasoning-answer`; revision, split, and question column pending confirmation | TBD |
+| B-SFT2 | Same base revision as B0 | [Seungjun/dp_removed_s1K-1.1](https://huggingface.co/datasets/Seungjun/dp_removed_s1K-1.1) @ `636ecf409774771afb0bf10a436f4b1e608b5f29`; `default` / `train`; input `question`, full target `kimi-style-reasoning-answer`; 996 source rows, 989 retained | 5 epochs; 62 updates/epoch, 310 total |
 | B-SFT-RL | B-SFT1 or B-SFT2 checkpoint: TBD | RL dataset/revision and settings TBD | TBD |
 | I0 | `Qwen/Qwen2.5-3B-Instruct` | None; use the same starting revision as I-RL | No training |
 | I-RL | `Qwen/Qwen2.5-3B-Instruct` @ `aa8e72537993ba99e69dfaafa59ed015b17504d1` | `Seungjun/dp_removed_DAPO-Math-17k-Processed`, `en` / `train`; 14,068 rows; exact resolved revision in run manifest | 300 total; recovered from step 40 |
 
 **Current I-RL settings:** full-parameter DAPO, G=8, 16 retained questions / 128 responses per rollout, two disjoint 64-response optimizer updates, LR 1e-6, warmup 20 updates, seed 42. Response cap 20,480; soft length penalty above 16,384; no KL or budget forcing. FP32 parameters/Adam state, BF16 compute, RTX PRO 6000 96GB. Checkpoints every 20 updates. Across 300 updates: 2,400 retained question selections, not necessarily unique.
 
+**B-RL notebook ready:** [train_dapo_qwen25_3b_base.ipynb](notebooks/train_dapo_qwen25_3b_base.ipynb), config [dapo_qwen25_3b_base.yaml](configs/dapo_qwen25_3b_base.yaml). Starts directly from `Qwen/Qwen2.5-3B` @ `3aab1f1954e9cc14eb9509a215f9e5ca08227a9b`. Same DAPO data, optimization, sampling, rollout, and smoke settings as I-RL; includes the chunked Qwen vocabulary-projection memory fix. Preserves the base model's shipped chat template/default system message and original EOS/PAD: `<|endoftext|>` (151643). No tokenizer EOS override, extra stop tokens, or suppression of model EOS. Completion masks use actual response lengths so generated EOS receives loss while padding does not. No SFT starting checkpoint or recovery parent. Run name: `dapo_qwen25_3b_pretrained_base`.
+
+Preparation with the real pinned base tokenizer verified all 14,068 local dataset rows and provenance digests; all prompts fit (49–1,525 tokens), with no truncation. Full training starts from the base weights, saves every 20 updates, and automatically resumes the latest completed checkpoint in its own folder. Optional two-update GPU smoke has separate timestamped outputs. GPU training has not been run here. The 300-update budget covers 2,400 retained question selections, potentially with repeats; dynamic sampling may generate additional candidates.
+
+**B-RL restart:** the previous attempt used an EOS override and the last supplied log showed 0/300 optimizer updates. Its files remain under `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rl/`. Stop that runtime and use the rebuilt notebook in a fresh Colab runtime. The corrected run uses `base-rl-native-eos/` and must start from the original base weights, not the previous attempt. Resume validation rejects manifests with the old tokenizer/generation settings. Local checks passed (23 tests, including saved EOS/PAD and resume behavior); GPU speed has not been verified.
+
 **I-RL completion:** user reported training finished on 2026-10-06. The configured final checkpoint is step 300; the evaluation notebook verifies its completion marker, model shards, and training identity before evaluating. Recovery history: update 43 completed, then backward OOM occurred during update 44. Chunked vocabulary projection allowed restarting from checkpoint 40 in the `MemoryFix` folder. Updates 41 onward were replayed; the total remains 300. Training notebook: [train_dapo_qwen25_3b.ipynb](notebooks/train_dapo_qwen25_3b.ipynb). Config: [dapo_qwen25_3b.yaml](configs/dapo_qwen25_3b.yaml).
+
+**B-SFT2 completion (user reported):** status `complete`, five epochs / 310 optimizer updates, no resume, total training time 1,676.619 seconds (27m 56.6s). Peak GPU allocated/reserved: 31,371,308,032 / 32,682,016,768 bytes. Run identity: `5644b316cb49344bea968be58871bc87a6bae072f50309bcfba18a1ce6e577ef`. Drive artifacts have not been independently inspected here.
+
+**B-SFT2 evaluation notebook:** [evaluate_qwen25_3b_s1_kimi_amc_math.ipynb](notebooks/evaluate_qwen25_3b_s1_kimi_amc_math.ipynb). Defaults to this run’s epoch-5 checkpoint, validates its identity and saved EOS, then uses the same AMC 2023 / MATH-500 greedy protocol as the earlier Qwen comparison. Optional two-problem smoke; `RUN_EVAL = True` evaluates all 540 problems with resume. User reported completed evaluation: AMC 10/40 (25.0%), MATH-500 257/500 (51.4%). Relative to B0, accuracy decreased by 12.5 and 3.4 percentage points, while mean output tokens increased approximately 4.9× and 4.6×, respectively. Generated responses have not been inspected to determine the cause.
+
+**B-SFT2 training:** [train_qwen25_3b_base_s1_kimi.ipynb](notebooks/train_qwen25_3b_base_s1_kimi.ipynb), config [sft_qwen25_3b_s1_kimi.yaml](configs/sft_qwen25_3b_s1_kimi.yaml). Full-parameter Qwen base SFT, BF16, batch 1, accumulation 16, LR 1e-5, cosine schedule, 5% warmup, seed 42, gradient checkpointing, and chunked vocabulary projection. Uses the base model's native chat template and the evaluation English instruction. Entire target text is preserved; only assistant target and native `<|im_end|>` receive loss. No added reasoning tags. EOS is set to the existing `<|im_end|>` for chat training/generation; padding is `<|endoftext|>`. No vocabulary additions.
+
+Actual-data preparation verified 989 nonempty targets, 7 missing targets, and 0 rows above the 20,480-token full-sequence cap. Full-sequence median/max: 1,860 / 4,261 Qwen tokens; mean supervised target length including EOT: 1,732.8. No truncation or correctness filter. Five epochs cover all 989 retained examples each epoch (4,945 example presentations). The user reported GPU training complete at step 310. The notebook includes an optional one-update smoke on the longest example, epoch saves, and automatic resume from the latest completed epoch.
 
 ## Google Drive paths
 
-These are absolute **Colab-mounted Drive paths** (`/content/drive/MyDrive/` = My Drive). B0/I0 evaluation destinations and the I-RL training location are user reported; future training roots remain planned.
+These are absolute **Colab-mounted Drive paths** (`/content/drive/MyDrive/` = My Drive). B0/I0 evaluation destinations and the I-RL/B-SFT2 training locations are user reported; future training roots remain planned.
 
 | ID | Run root | Path status |
 | --- | --- | --- |
 | B0 | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/eval-base-instruct-rl-amc-math-temp0/base` | Completed evaluation outputs (user reported) |
-| B-RL | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rl` | Planned |
+| B-RL | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rl-native-eos` | Configured in RL notebook; training pending |
 | B-SFT1 | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-sft-v1-long` | Planned |
-| B-SFT2 | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-sft-v2-short` | Planned |
+| B-SFT2 | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-sft-v2-short` | Completed training and evaluation (user reported) |
 | B-SFT-RL | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-sft-rl` | Planned; record SFT variant before launch |
 | I0 | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/eval-base-instruct-rl-amc-math-temp0/instruct` | Completed evaluation outputs (user reported) |
 | I-RL | `/content/drive/MyDrive/LG-AIME-DAPO-Qwen25-3B-MiniBatch300-MemoryFix` | Current configured recovery run |
@@ -90,6 +104,55 @@ each model's `logs/`. The user reported `comparison_table.csv` and all six metri
 paths in the table above; the remaining supporting filenames describe the notebook's output layout.
 
 **Planned evaluation directory for future trained rows:** `<run root>/eval/amc2023_math500_temp0/`.
+
+**B-RL exact configured locations (corrected run pending):**
+
+```text
+# Final full-model checkpoint; intermediate checkpoints every 20 updates
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rl-native-eos/checkpoints/dapo_qwen25_3b_pretrained_base/checkpoint-300/
+# Loss, reward, entropy, length, learning rate, and throughput history
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rl-native-eos/logs/dapo_qwen25_3b_pretrained_base/steps.jsonl
+# Run manifest with resolved dataset revision and code identity
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rl-native-eos/logs/dapo_qwen25_3b_pretrained_base/run_manifest.json
+# Console log
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rl-native-eos/logs/dapo_qwen25_3b_pretrained_base/training_console.log
+# Generated rollout responses and scoring records
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rl-native-eos/logs/dapo_qwen25_3b_pretrained_base/rollouts/
+# Separate GPU smoke attempts
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rl-native-eos/smoke_attempts/
+```
+
+**B-SFT2 completed evaluation output root (user reported):**
+
+```text
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-sft-v2-short/eval/amc2023_math500_temp0/sft_qwen25_3b_base_s1_kimi/epoch_5/
+```
+
+Under that root, `full/results/sft_qwen25_3b_base_s1_kimi_epoch5.json` stores metrics;
+`full/results/sft_qwen25_3b_base_s1_kimi_epoch5_generations.jsonl` stores full responses and scores.
+`full/summary_table.json` and `full/summary_table.csv` contain the two-benchmark table.
+The same results directory holds the `_problems.jsonl` resume journal and model/code/data manifests.
+Smoke files use `smoke/` instead of `full/`; console logs are under `logs/`.
+
+**B-SFT2 exact training locations (user reported):**
+
+```text
+# Final full-model checkpoint (five completed epochs)
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-sft-v2-short/checkpoints/stage1/sft_qwen25_3b_base_s1_kimi/epoch_5/
+# Loss, learning rate, gradient norm, throughput, step, and epoch history
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-sft-v2-short/logs/stage1/sft_qwen25_3b_base_s1_kimi/steps.jsonl
+# Training manifest
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-sft-v2-short/logs/stage1/sft_qwen25_3b_base_s1_kimi/run_manifest.json
+# Preparation report and loss preview
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-sft-v2-short/logs/stage1/sft_qwen25_3b_base_s1_kimi/preparation/
+# Pinned two-column dataset snapshot and training.yaml
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-sft-v2-short/inputs/sft_qwen25_3b_base_s1_kimi/
+# Console log
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-sft-v2-short/sft_qwen25_3b_base_s1_kimi/train_console.log
+```
+
+Epochs 1–4 use the same checkpoint directory with `epoch_1` through `epoch_4`. Optional smoke
+uses run name `sft_qwen25_3b_base_s1_kimi_smoke` in separate checkpoint/log directories.
 
 **I-RL exact current locations:**
 
