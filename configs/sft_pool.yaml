@@ -1,0 +1,32 @@
+# Fixed source revisions verified against the public Hub.
+sources:
+  math:
+    repo: EleutherAI/hendrycks_math
+    revision: 21a5633873b6a120296cce3e2df9d5550074f4a3
+    configs: [algebra, counting_and_probability, geometry, intermediate_algebra, number_theory, prealgebra, precalculus]
+    split: train
+    expected_rows: 7500
+  numina:
+    repo: AI-MO/NuminaMath-1.5
+    revision: 1b05109f9e5c1ad06c0663519502416c30b300f8
+    configs: [default]
+    split: train
+    expected_rows: 896215
+  s1:
+    repo: simplescaling/s1K
+    revision: 278d72baaa2b887a7e76a70a0ae254a5a45536e4
+    configs: [default]
+    split: train
+    expected_rows: 1000
+source_priority: [math, numina, s1]
+exclude_numina_sources: [amc_aime]
+dedup_jaccard: 0.8
+dedup_ngram: 5
+coverage_threshold: 0.70
+near_miss_lower: 0.50
+reference_ngram: 8
+verify_timeout_seconds: 5
+eval_suite: configs/english_eval_suite.json
+rl_config: configs/dapo.yaml
+hf_repo: Seungjun/clean-math-sft-pool
+hf_private: true
