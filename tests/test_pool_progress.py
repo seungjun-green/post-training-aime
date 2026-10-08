@@ -6,56 +6,93 @@ import pytest
 from common.pool_progress import PoolProgress, run_pool_logged
 
 
-def test_panel_collapses_output_and_keeps_redacted_diagnostics(tmp_path, monkeypatch):
-    created, updated = [], []
-    monkeypatch.setitem(sys.modules, 'IPython', SimpleNamespace(get_ipython=lambda: SimpleNamespace(kernel=True)))
-    def display(data, **kwargs):
-        created.append(data['text/plain'])
-        def update(data, **kwargs):
-            assert kwargs == {'raw': True}
-            updated.append(data['text/plain'])
-        return SimpleNamespace(update=update)
-    monkeypatch.setitem(sys.modules, 'IPython.display', SimpleNamespace(display=display))
+@pytest.fixture
+def bars(monkeypatch):
+    created = []
+    class Bar:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            self.n = kwargs.get('initial', 0)
+            self.total = kwargs.get('total')
+            self.closed = False
+            self.postfix = {}
+            created.append(self)
+        def update(self, delta):
+            self.n += delta
+        def close(self):
+            self.closed = True
+        def refresh(self):
+            pass
+        def set_description_str(self, text, **kwargs):
+            self.description = text
+        def set_postfix(self, postfix, **kwargs):
+            self.postfix = postfix
+    monkeypatch.setitem(sys.modules, 'tqdm.auto', SimpleNamespace(tqdm=Bar))
+    return created
+
+
+def test_real_bar_tracks_counts_and_keeps_redacted_diagnostics(tmp_path, monkeypatch, bars, capsys):
     monkeypatch.setenv('HF_TOKEN', 'private-token')
     lines = ['INFO enormous config private-token', 'WARNING diagnostic',
              'full: 100/200 rows already complete', 'full: 101/200 rows; index=5; correct=2/8']
     path = tmp_path / 'full.log'
     run_pool_logged([sys.executable, '-c', f'print({chr(10).join(lines)!r})'], cwd=tmp_path, log_path=path)
-    assert len(created) == 1
-    assert '101/200' in updated[-1] and 'Complete' in updated[-1]
-    assert 'enormous config' not in updated[-1]
-    assert 'WARNING diagnostic' in updated[-1]
+    progress = bars[-1]
+    assert progress.total == 200 and progress.n == 101
+    assert progress.kwargs['initial'] == 100
+    assert progress.postfix['last correct'] == '2/8'
+    assert progress.postfix['log warnings'] == 1
+    assert all(bar.closed for bar in bars)
     assert 'enormous config [REDACTED]' in path.read_text()
     assert 'private-token' not in path.read_text()
+    assert "text/plain" not in capsys.readouterr().out
 
 
-def test_failure_retains_actual_error_and_does_not_complete(tmp_path, capsys):
+def test_failure_retains_error_and_partial_bar(tmp_path, capsys, bars):
     with pytest.raises(RuntimeError, match='CUDA failed'):
-        run_pool_logged([sys.executable, '-c', "print('CUDA failed'); exit(1)"],
+        run_pool_logged([sys.executable, '-c', "print('full: 3/10 rows already complete'); print('full: 4/10 rows; index=4; correct=1/8'); print('CUDA failed'); exit(1)"],
                         cwd=tmp_path, log_path=tmp_path / 'failure.log')
     assert 'Stopped / failed' in capsys.readouterr().out
+    assert bars[-1].n == 4 and bars[-1].closed
 
 
-def test_resume_rate_excludes_previously_completed_rows(tmp_path, capsys):
-    now = [0]
-    p = PoolProgress(tmp_path / 'log', clock=lambda: now[0])
+def test_resume_starts_timing_after_warmup(tmp_path, bars):
+    p = PoolProgress(tmp_path / 'log')
     p.consume('full: 100/200 rows already complete')
-    now[0] = 60
+    p.consume('Capturing CUDA graphs')
+    assert len(bars) == 1  # Only the startup indicator exists during compilation.
+    p.consume('Generation active: 4 problems pending; GPU response limit 16')
+    assert len(bars) == 2 and bars[-1].kwargs['initial'] == 100
     p.consume('full: 110/200 rows; index=20; correct=1/8')
-    visible = capsys.readouterr().out
-    assert '10.0 problems/min' in visible
-    assert '00:09:00' in visible
+    assert bars[-1].n == 110
+    assert '{remaining}' in bars[-1].kwargs['bar_format']
+    p.finish('Complete')
 
 
-def test_four_gpu_status_and_completion(tmp_path, capsys):
+def test_four_gpu_bars_and_completion(tmp_path, bars):
     p = PoolProgress(tmp_path / 'log')
     p.consume("GPU 0: {'done': 3, 'total': 10} | GPU 1: {'done': 5, 'total': 10} | GPU 2: starting / generating | GPU 3: finished")
-    p.render(force=True)
-    assert p.rows['GPU 0'] == (3, 10)
-    assert p.rows['GPU 2'] == 'starting / generating'
-    p.consume('GPU 0: finished | GPU 1: finished | GPU 2: finished | GPU 3: finished')
-    assert p.rows['GPU 0'] == (10, 10)
-    assert len(p.rows) == 4
+    assert len(p.bars) == 4
+    assert p.bars['GPU 0'].n == 3
+    p.consume("GPU 0: finished | GPU 1: finished | GPU 2: {'done': 4, 'total': 10} | GPU 3: finished")
+    assert p.bars['GPU 0'].n == 10
+    assert p.bars['GPU 2'].total == 10
+    assert p.bars['GPU 2'].n == 4
+    p.finish('Complete')
+    assert all(bar.closed for bar in bars)
+
+
+def test_text_tqdm_fallback_renders_progress_and_eta(tmp_path, capsys, monkeypatch):
+    from tqdm.std import tqdm
+    monkeypatch.setitem(sys.modules, 'tqdm.auto', SimpleNamespace(tqdm=tqdm))
+    p = PoolProgress(tmp_path / 'log')
+    p.consume('full: 100/200 rows already complete')
+    p.consume('full: 101/200 rows; index=1; correct=0/8')
+    p.finish('Complete')
+    output = capsys.readouterr().out
+    assert '101/200 problems' in output
+    assert 'remaining' in output and 'elapsed' in output
+    assert 'text/plain' not in output
 
 
 def test_resume_diagnostic_identifies_settings_without_modifying_manifest(tmp_path):

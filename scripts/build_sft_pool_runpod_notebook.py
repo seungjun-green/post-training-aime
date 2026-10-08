@@ -7,7 +7,7 @@ NAME = 'full_run_clean_sft_pool_qwen3b_8_runpod_4gpu.ipynb'
 
 
 def cells():
-    original = colab_cells()
+    original = colab_cells(include_resume=False)
     prepare = original[5].source.replace('Path(DRIVE_ROOT)', 'Path(STORAGE_ROOT)')
     prepare = prepare.replace("revision='main'", 'revision=SOURCE_REVISION')
     prepare = prepare.replace("'pipeline.sample_sft_pool'", "'pipeline.sample_sft_pool_runpod'")
@@ -32,6 +32,8 @@ def cells():
 
         Sampling remains temperature=1, top-p=1, maximum 8,192 new tokens per answer,
         with the same prompt, grading and quality filters as the Colab notebook.
+        The source tag `synthetic_math` no longer excludes a row; all other quality rules remain.
+        Use the new default RUN_NAME: earlier filtered runs have different row assignments.
         Rows with 0/8 correct remain in the output. There is no generation smoke gate.
         **UPLOAD_FULL=True publishes automatically to Seungjun/clean-math-sft-pool-30k
         after all four workers finish and the merged result validates.**
@@ -45,7 +47,7 @@ def cells():
         Storage reference: [RunPod storage guide](https://www.runpod.io/blog/where-did-my-files-go-a-straight-guide-to-runpod-storage).
         '''),
         code('''
-        RUN_NAME = 'qwen25-3b-base-eight-runpod4-other-v1'
+        RUN_NAME = 'qwen25-3b-base-eight-runpod4-other-v3-no-source-exclusion'
         STORAGE_ROOT = '/workspace/LG-SFT-Pool-Sampling'
         CODE_ROOT = '/workspace/lg-sft-pool-sampling-runpod4'
         EVAL_ENV = '/workspace/lg-eval-env'
@@ -78,7 +80,10 @@ def cells():
         subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', 'uv==0.11.22', 'PyYAML==6.0.3'])
         subprocess.check_call([sys.executable, 'scripts/setup_eval_runtime.py', '--venv', EVAL_ENV], cwd=CODE_ROOT)
         sys.path.insert(0, CODE_ROOT)
-        from common.pool_progress import run_pool_logged as run_logged
+        import importlib
+        import common.pool_progress as pool_progress
+        importlib.reload(pool_progress)
+        run_logged = pool_progress.run_pool_logged
         gpu_check = """
         import torch
         assert torch.cuda.device_count() == 4, 'The four selected GPUs must all be visible'
@@ -106,7 +111,7 @@ def cells():
 
         Each worker uses tensor_parallel_size=1 and its own CUDA_VISIBLE_DEVICES.
         The model is downloaded once to the shared cache before workers launch.
-        One progress panel updates every 30 seconds with per-GPU counts; detailed logs are in
+        A tqdm bar per GPU updates every 30 seconds with counts, elapsed time and estimated remaining time; detailed logs are in
         `RUN_DIR/workers/0/console.log` through `RUN_DIR/workers/3/console.log`.
         Startup compilation can take several minutes. CPU grading runs separately in each worker.
 

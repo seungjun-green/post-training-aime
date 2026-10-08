@@ -1,4 +1,4 @@
-version: smoke-reviewed-v2
+version: smoke-reviewed-v3-no-source-exclusion
 reviewed_rows:
   1be5f4a7b2e8232853dd5589ebe9364b4c63aa797a5d980f12be621ef5e0d259:
     problem_sha256: 5d077b437dda730b724616e0ae7aa8efb2df0c261859d3a1a5fdd60a20e6cffa
@@ -129,6 +129,5 @@ reviewed_rows:
     reason: ambiguous_notation
     evidence: The concatenated exponent string lacks multiplication signs or grouping
       sufficient to identify the intended integer unambiguously.
-quarantine_unreviewed_sub_sources:
-- synthetic_math
+quarantine_unreviewed_sub_sources: []
 screen_reference_parseability: true

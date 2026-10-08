@@ -42,7 +42,7 @@ def cells():
         '''),
         code('''
         # Run settings. Choose a NEW RUN_NAME whenever you change model/sampling settings.
-        RUN_NAME = 'qwen25-3b-base-eight-cleaned-other-v1'
+        RUN_NAME = 'qwen25-3b-base-eight-cleaned-other-v3-no-source-exclusion'
         DRIVE_ROOT = '/content/drive/MyDrive/LG-SFT-Pool-Sampling'
         CODE_ROOT = '/content/lg-sft-pool-sampling'
         EVAL_ENV = '/content/lg-eval-env'
@@ -83,7 +83,7 @@ def cells():
 
         First, CPU regression checks exercise equation preservation, factorized form,
         radix notation, junk answers, and non-final matches. A failure stops this cell.
-        Unreviewed `synthetic_math` rows are quarantined by default pending source review;
+        `synthetic_math` rows are evaluated by the same content and reference checks as other sources;
         individually reviewed corrections can remain eligible. Gold parseability and
         supported factorization forms are checked across the source before GPU work.
         Screening does not prove every remaining reference answer correct.

@@ -4,14 +4,14 @@ from build_sft_pool_sampling_notebook import FILES
 from build_sft_pool_sampling_notebook import cells as sampling_cells
 
 
-def cells():
+def cells(include_resume=True):
     # Share the exact dependency installation and embedded code with the smoke notebook.
     install = sampling_cells()[3]
     install.source = install.source.replace(
         payload([ROOT / p for p in FILES]),
-        payload([ROOT / p for p in FILES + ['common/pool_progress.py']]))
-    install.source += '\nfrom common.pool_progress import run_pool_logged as run_logged'
-    return [
+        payload([ROOT / p for p in FILES + ['common/pool_progress.py'] + (['common/pool_resume.py'] if include_resume else [])]))
+    install.source += '\nimport importlib\nimport common.pool_progress as pool_progress\nimportlib.reload(pool_progress)\nrun_logged = pool_progress.run_pool_logged'
+    result = [
         markdown('''
         # Qwen2.5-3B 전체 실행 — 문제당 8개 생성 · 채점 · HF 업로드
 
@@ -25,6 +25,9 @@ def cells():
         답을 8개씩 생성하고 Math-Verify 0.9.0으로 채점합니다.
         `answer_type="other"`의 시간·비율·진법·퍼센트 등 표기 처리 수정도 포함됩니다.
 
+        `synthetic_math` 출처만으로 문제를 제외하지 않습니다. 다른 품질 규칙은 유지됩니다.
+        이전 필터로 실행한 체크포인트와 대상 행이 달라지므로 새 RUN_NAME을 사용하세요.
+
         결과에는 `responses`, `extracted_answers`, `correct`, `response_tokens`,
         `finish_reasons`, `num_correct`가 추가됩니다.
         **0/8인 행도 이번 전체 결과에는 저장됩니다.** 나중에 `num_correct > 0`으로
@@ -35,7 +38,7 @@ def cells():
         이어 실행이 거부될 수 있습니다. 새 실험에는 새 `RUN_NAME`을 사용하세요.
         '''),
         code('''
-        RUN_NAME = 'qwen25-3b-base-eight-full-other-v1'
+        RUN_NAME = 'qwen25-3b-fresh-run-001'
         DRIVE_ROOT = '/content/drive/MyDrive/LG-SFT-Pool-Sampling'
         CODE_ROOT = '/content/lg-sft-pool-sampling'
         EVAL_ENV = '/content/lg-eval-env'
@@ -90,7 +93,7 @@ def cells():
         문제당 8개, temperature=1.0, top-p=1.0, 답변당 최대 8,192토큰입니다.
         Qwen의 `<|endoftext|>`(151643), `<|im_end|>`(151645)에서 생성을 멈춥니다.
         토큰 한도에 도달하면 `finish_reasons`에 `length`가 기록됩니다.
-        전체 생성에는 오랜 시간이 걸릴 수 있습니다. 진행 상황은 하나의 갱신되는 상태 패널에 표시됩니다. 전체 로그는 full_console.log에 보존됩니다.
+        전체 생성에는 오랜 시간이 걸릴 수 있습니다. 진행 상황은 완료 수·경과 시간·예상 남은 시간을 보여주는 tqdm 진행 막대에 표시됩니다. 전체 로그는 full_console.log에 보존됩니다.
         '''),
         code('''
         run_logged(COMMAND + ['--mode', 'full'], cwd=CODE_ROOT,
@@ -121,6 +124,17 @@ def cells():
             print('결과는 Drive에 저장되었습니다:', RUN_DIR / 'full/data')
         '''),
     ]
+    if include_resume:
+        result[1].source = result[1].source.replace(
+            "DRIVE_ROOT =", "RUN_MODE = 'new'  # auto: resume this RUN_NAME if found; resume: require it; new: never overwrite.\nDRIVE_ROOT =", 1)
+        result[0].source += "\n\nThis notebook defaults to a fresh run (RUN_MODE='new'). To resume it later, keep the same RUN_NAME and change RUN_MODE to 'resume' or 'auto', then Run all. Saved settings are restored automatically. RUN_MODE='resume' requires an existing run; 'new' requires an empty directory."
+        result[4].source += "\n\nSaved runs restore their settings and pinned input. Code/filter changes still require the original compatible notebook or a new run name. A disconnected session regenerates only unfinished problems; completed problems are reused. Do not launch two sessions on the same run directory."
+        result[3].source += '\nimport common.pool_resume as pool_resume\nimportlib.reload(pool_resume)'
+        result[5].source = result[5].source.replace(
+            'RUN_DIR.mkdir(parents=True, exist_ok=True)',
+            'CONFIG = pool_resume.resolve_run_config(CONFIG, RUN_DIR, RUN_MODE)\nRUN_DIR.mkdir(parents=True, exist_ok=True)')
+        result[5].source += '\npool_resume.show_checkpoint_status(RUN_DIR)'
+    return result
 
 
 if __name__ == '__main__':

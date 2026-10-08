@@ -262,3 +262,37 @@ def test_regrade_preserves_generation_and_handles_prior_correction(tmp_path):
 def test_valid_latex_unit_labels_remain_parseable(answer):
     extracted, correct, _ = score_final('\\boxed{' + answer + '}', '52', 'Find the area difference in square cm.')
     assert extracted and correct
+
+
+@pytest.mark.parametrize('problem,gold,reason', [
+    ('Compute 6 times 7.', '42', None),
+    ('Use [img]https://example.com/a.png[/img]', '42', 'image_reference'),
+    ('Find the area in the following diagram.', '42', 'diagram_requires_review'),
+    ('Prove the theorem.', '42', 'proof_requires_review'),
+    ('(a) Find x. (b) Find y.', '42', 'multipart_requires_review'),
+    ('Find the number. (A) 41 (B) 42', '42', 'multiple_choice'),
+    ('Find both values.', '42', 'multiple_required_values'),
+    ('Compute 2^34^5.', '42', 'ambiguous_concatenated_powers'),
+    ('Compute 6 times 7.', '))))', 'unparseable_reference'),
+    ('Factor completely.', '(x^2-1)(x+2)', 'factorization_reference_requires_review'),
+])
+def test_current_policy_filters_content_equally_for_synthetic_rows(problem, gold, reason):
+    registry = yaml.safe_load((ROOT / 'configs/sft_pool_quality.yaml').read_text())
+    assert registry['quarantine_unreviewed_sub_sources'] == []
+    for source in ['synthetic_math', 'algebra']:
+        row = dict(sample(problem, gold), sub_source=source)
+        kept, audit = review_row(row, registry, SPEC)
+        if reason is None:
+            assert kept is not None and audit is None
+        else:
+            assert kept is None and audit['reason'] == reason
+
+
+def test_manual_quarantine_still_applies_to_synthetic_rows():
+    registry = yaml.safe_load((ROOT / 'configs/sft_pool_quality.yaml').read_text())
+    row = dict(sample('Compute 6 times 7.'), sub_source='synthetic_math')
+    registry['reviewed_rows'][row['id']] = {
+        'problem_sha256': hashlib.sha256(row['problem'].encode()).hexdigest(),
+        'expected_gold': row['gold_answer'], 'action': 'quarantine', 'reason': 'reviewed_problem'}
+    kept, audit = review_row(row, registry, SPEC)
+    assert kept is None and audit['reason'] == 'reviewed_problem'

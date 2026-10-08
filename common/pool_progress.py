@@ -1,4 +1,4 @@
-"""Presentation-only progress for pool notebooks; raw diagnostics stay in run_logged files."""
+"""tqdm progress for pool notebooks; raw diagnostics remain in log files."""
 import ast
 from contextlib import redirect_stdout
 import re
@@ -9,30 +9,26 @@ from common.process import run_logged
 
 
 class PoolProgress:
-    def __init__(self, log_path, title='Sampling', clock=time.monotonic):
-        self.log_path, self.title, self.clock = str(log_path), title, clock
-        self.started = clock()
-        self.last_render = -float('inf')
+    def __init__(self, log_path, title='Sampling'):
+        from tqdm.auto import tqdm
+        self.tqdm = tqdm
+        self.log_path, self.title = str(log_path), title
         self.stream = sys.stdout
         self.buffer = ''
-        self.handle = None
         self.phase = 'Preparing / loading'
-        self.rows = {}
-        self.baseline = None
+        self.rows, self.bars = {}, {}
+        self.generating = False
+        self.last_refresh = 0
         self.warning_count = 0
-        self.warning = ''
-        try:
-            from IPython import get_ipython
-            self.notebook = getattr(get_ipython(), 'kernel', None) is not None
-        except ImportError:
-            self.notebook = False
-        self.render(force=True)
+        self.latest_grade = None
+        self.startup = self.new_bar(desc=f'{title}: {self.phase}', total=None,
+                                    bar_format='{desc} | elapsed {elapsed}', leave=False)
+        self.stream.write(f'Full log: {self.log_path}\n')
 
-    @staticmethod
-    def duration(seconds):
-        minutes, seconds = divmod(int(seconds), 60)
-        hours, minutes = divmod(minutes, 60)
-        return f'{hours:02d}:{minutes:02d}:{seconds:02d}'
+    def new_bar(self, **kwargs):
+        # Widget creation must not feed its repr back into the captured subprocess stream.
+        with redirect_stdout(self.stream):
+            return self.tqdm(file=self.stream, mininterval=1, **kwargs)
 
     def write(self, text):
         self.buffer += text
@@ -44,13 +40,26 @@ class PoolProgress:
     def flush(self):
         self.stream.flush()
 
+    def start_generation(self):
+        if not self.generating:
+            self.generating = True
+            self.startup.close()
+            # Start ETA timing after model loading and compilation, with resumed rows initialised.
+            self.render()
+
     def consume(self, line):
         line = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', line).strip()
         match = re.match(r'(full|smoke): (\d+)/(\d+) rows', line)
         if match:
+            if 'already complete' not in line:
+                self.start_generation()
             self.rows['All problems'] = (int(match[2]), int(match[3]))
             self.phase = 'Loading model' if 'already complete' in line else 'Generating and grading'
+            grade = re.search(r'correct=(\d+)/8', line)
+            if grade:
+                self.latest_grade = grade[1] + '/8'
         elif line.startswith('GPU ') and ': ' in line:
+            self.start_generation()
             for item in line.split(' | '):
                 label, value = item.split(': ', 1)
                 if value.startswith('{'):
@@ -66,6 +75,7 @@ class PoolProgress:
                     self.rows[label] = value
             self.phase = 'Parallel generation and grading'
         elif 'Generation active:' in line:
+            self.start_generation()
             self.phase = 'Generating and grading'
         elif 'Starting to load model' in line or 'Loading safetensors' in line:
             self.phase = 'Loading model weights'
@@ -79,55 +89,55 @@ class PoolProgress:
             self.phase = 'Upload verified'
         if re.search(r'\b(WARNING|WARN|ERROR|Error)\b', line):
             self.warning_count += 1
-            self.warning = line[:180]
-        counts = [v for v in self.rows.values() if isinstance(v, tuple)]
-        if counts and len(counts) == len(self.rows) and self.baseline is None:
-            self.baseline = (sum(v[0] for v in counts), self.clock())
         self.render()
 
     def render(self, force=False):
-        now = self.clock()
-        if not force and now - self.last_render < (1 if self.notebook else 30):
+        now = time.monotonic()
+        force = force or now - self.last_refresh >= 1
+        if force:
+            self.last_refresh = now
+        if not self.generating:
+            self.startup.set_description_str(f'{self.title}: {self.phase}', refresh=force)
+            self.startup.update(0)
             return
-        self.last_render = now
-        lines = [f'{self.title} — {self.phase}', f'Elapsed: {self.duration(now-self.started)}']
         for label, value in self.rows.items():
-            if isinstance(value, tuple):
-                done, total = value
-                fraction = done / total if total else 1
-                bars = min(20, int(fraction * 20))
-                lines.append(f'{label}: [{"█" * bars}{"·" * (20-bars)}] {done:,}/{total:,} ({fraction:.1%})')
+            known = isinstance(value, tuple)
+            bar = self.bars.get(label)
+            if bar is None or (known and bar.total is None):
+                if bar is not None:
+                    bar.close()
+                done, total = value if known else (0, None)
+                bar = self.new_bar(total=total, initial=done, desc=label if known else f'{label}: {value}',
+                    unit='problem', smoothing=0, dynamic_ncols=True, leave=True,
+                    bar_format='{desc}: {percentage:6.2f}%|{bar}| {n_fmt}/{total_fmt} problems '
+                               '[elapsed {elapsed} | remaining {remaining} | {rate_fmt}{postfix}]')
+                self.bars[label] = bar
+            if known:
+                bar.update(max(0, value[0] - bar.n))
             else:
-                lines.append(f'{label}: {value}')
-        counts = [v for v in self.rows.values() if isinstance(v, tuple)]
-        if self.baseline and counts and len(counts) == len(self.rows):
-            done, total = sum(v[0] for v in counts), sum(v[1] for v in counts)
-            new = done - self.baseline[0]
-            elapsed = now - self.baseline[1]
-            if new > 0 and elapsed > 0:
-                rate = new / elapsed
-                lines.append(f'{rate*60:.1f} problems/min · estimated generation remaining: {self.duration(max(0, total-done)/rate)}')
-        if self.warning_count:
-            lines.append(f'Diagnostics: {self.warning_count} warning/error lines (full details in log)')
-            lines.append(self.warning)
-        lines.append(f'Full log: {self.log_path}')
-        data = {'text/plain': '\n'.join(lines)}
-        if self.notebook:
-            from IPython.display import display
-            if self.handle is None:
-                self.handle = display(data, raw=True, display_id=True)
-            else:
-                self.handle.update(data, raw=True)
-        else:
-            self.stream.write(data['text/plain'] + '\n')
-            self.stream.flush()
+                bar.set_description_str(f'{label}: {value}', refresh=False)
+            postfix = {}
+            if self.latest_grade is not None and label == 'All problems':
+                postfix['last correct'] = self.latest_grade
+            if self.warning_count:
+                postfix['log warnings'] = self.warning_count
+            bar.set_postfix(postfix, refresh=False)
+            if force:
+                bar.refresh()
 
     def finish(self, phase):
         if self.buffer:
             self.consume(self.buffer)
             self.buffer = ''
         self.phase = phase
+        if phase == 'Complete' and self.rows and not self.generating:
+            self.start_generation()
         self.render(force=True)
+        self.startup.close()
+        for bar in self.bars.values():
+            bar.close()
+        self.stream.write(f'{self.title}: {phase}. Full log: {self.log_path}\n')
+        self.stream.flush()
 
 
 def run_pool_logged(command, *, cwd, log_path, title='Sampling'):

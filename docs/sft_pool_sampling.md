@@ -74,13 +74,14 @@ area ratio to 0 and the circle/tangent maximum area to `3*sqrt(3)*r^2/8`. Nonuni
 corrupted, inconsistent, or incomplete-reference questions are quarantined.
 Each reviewed action checks the exact question hash and original gold before applying.
 
-Beyond individual patches, unreviewed `synthetic_math` rows are quarantined by default
-pending source review. This conservative source-level hold follows multiple newly
-observed semantic errors; it does not establish an error rate for that entire subset.
-Individually reviewed corrected rows can remain eligible. All source rows also receive
+The blanket exclusion of unreviewed `synthetic_math` rows has been removed in
+`smoke-reviewed-v3-no-source-exclusion`. A source tag alone no longer excludes a row.
+Individually reviewed corrections and quarantines remain unchanged. All source rows receive
 reference parseability and supported-factorization checks, alongside existing rules
 for image/diagram dependence, proofs, multipart questions, and corrupted fragments.
 The rules do not exhaustively establish uniqueness or mathematical truth for every row.
+Use a new `RUN_NAME` for this policy: existing runs have a different filtered row order
+and must not resume against the expanded set. Existing checkpoints are left untouched.
 
 `quality_summary.json` reconciles counts. `quality_decisions.jsonl` preserves every
 excluded/corrected original and its reason. Eligible rows retain source columns;
