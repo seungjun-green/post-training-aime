@@ -38,7 +38,7 @@ def cells(include_resume=True):
         이어 실행이 거부될 수 있습니다. 새 실험에는 새 `RUN_NAME`을 사용하세요.
         '''),
         code('''
-        RUN_NAME = 'qwen25-3b-fresh-run-001'
+        RUN_NAME = 'qwen25-3b-fresh-run-002'
         DRIVE_ROOT = '/content/drive/MyDrive/LG-SFT-Pool-Sampling'
         CODE_ROOT = '/content/lg-sft-pool-sampling'
         EVAL_ENV = '/content/lg-eval-env'
@@ -126,14 +126,17 @@ def cells(include_resume=True):
     ]
     if include_resume:
         result[1].source = result[1].source.replace(
-            "DRIVE_ROOT =", "RUN_MODE = 'new'  # auto: resume this RUN_NAME if found; resume: require it; new: never overwrite.\nDRIVE_ROOT =", 1)
-        result[0].source += "\n\nThis notebook defaults to a fresh run (RUN_MODE='new'). To resume it later, keep the same RUN_NAME and change RUN_MODE to 'resume' or 'auto', then Run all. Saved settings are restored automatically. RUN_MODE='resume' requires an existing run; 'new' requires an empty directory."
+            "DRIVE_ROOT =", "RUN_MODE = 'auto'  # auto: resume this RUN_NAME if found; resume: require it; new: never overwrite.\nDRIVE_ROOT =", 1)
+        result[0].source += "\n\nThis notebook defaults to resuming qwen25-3b-fresh-run-002 (RUN_MODE='auto'). Keep that run name and Run all to continue its saved progress. Saved settings are restored automatically. RUN_MODE='resume' requires an existing run; 'new' requires an empty directory."
         result[4].source += "\n\nSaved runs restore their settings and pinned input. Code/filter changes still require the original compatible notebook or a new run name. A disconnected session regenerates only unfinished problems; completed problems are reused. Stop other generation sessions before resuming. Unreadable checkpoint records are backed up and removed only after all surviving records pass source/annotation validation; missing problems are regenerated. Do not launch two sessions on the same run directory."
         result[3].source += '\nimport common.pool_resume as pool_resume\nimportlib.reload(pool_resume)'
         result[5].source = result[5].source.replace(
             'RUN_DIR.mkdir(parents=True, exist_ok=True)',
             'CONFIG = pool_resume.resolve_run_config(CONFIG, RUN_DIR, RUN_MODE)\nRUN_DIR.mkdir(parents=True, exist_ok=True)')
         result[5].source += '\nrun_setup_logged([str(Path(EVAL_ENV) / "bin/python"), "-m", "common.pool_resume",\n                  "--recover", str(CONFIG_PATH), str(RUN_DIR)],\n                 cwd=CODE_ROOT, log_path=RUN_DIR / "checkpoint_recovery.log")\npool_resume.show_checkpoint_status(RUN_DIR)'
+        result[7].source = result[7].source.replace(
+            "COMMAND + ['--mode', 'full']",
+            "[str(Path(EVAL_ENV) / 'bin/python'), '-m', 'common.pool_resume', '--generate', str(CONFIG_PATH), str(RUN_DIR)]")
     return result
 
 

@@ -137,9 +137,27 @@ def recover_checkpoint(config_path, run_dir):
         temporary.unlink(missing_ok=True)
 
 
+def generate_with_recovery(config_path, run_dir):
+    """Always recover immediately before generation, including standalone cell reruns."""
+    import os
+    import yaml
+    from common.pool_progress import check_resume
+    from pipeline import sample_sft_pool as sampling
+    check_resume(config_path, run_dir)
+    recover_checkpoint(config_path, run_dir)
+    cfg = yaml.safe_load(Path(config_path).read_text())
+    return sampling.generate(cfg, Path(__file__).resolve().parents[1], Path(run_dir),
+                             os.environ.get('HF_TOKEN'), 'full')
+
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--recover', nargs=2, metavar=('CONFIG', 'RUN_DIR'), required=True)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--recover', nargs=2, metavar=('CONFIG', 'RUN_DIR'))
+    group.add_argument('--generate', nargs=2, metavar=('CONFIG', 'RUN_DIR'))
     args = parser.parse_args()
-    recover_checkpoint(*args.recover)
+    if args.generate:
+        generate_with_recovery(*args.generate)
+    else:
+        recover_checkpoint(*args.recover)
