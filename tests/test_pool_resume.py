@@ -83,3 +83,65 @@ def test_colab_resume_notebook_is_self_contained():
         assert 'common/pool_resume.py' in z.namelist()
         for name in z.namelist():
             assert z.read(name) == (ROOT / name).read_bytes()
+
+
+@pytest.fixture
+def recovery_run(tmp_path, monkeypatch):
+    import yaml
+    from pipeline import sample_sft_pool as sampling
+    rows = [{'id': f'row-{i}'} for i in range(3)]
+    config_path = tmp_path / 'config.yaml'
+    config_path.write_text(yaml.safe_dump({'data': {'id_column': 'id'}}))
+    monkeypatch.setattr(sampling, 'prepare', lambda *args: (rows, {}))
+    def entry(i):
+        return {'source_index': i, 'id': f'row-{i}', 'annotation': {
+            'responses': ['answer'] * 8, 'extracted_answers': ['42'] * 8,
+            'correct': [True] * 8, 'response_tokens': [10] * 8,
+            'finish_reasons': ['stop'] * 8, 'num_correct': 8}}
+    return config_path, tmp_path / 'responses.jsonl', entry
+
+
+@pytest.mark.parametrize('broken', [b'broken\n', b'{"source_index":\n', b'\x00\x00\xff\n'])
+def test_recovery_keeps_valid_rows_after_corruption_and_full_backup(recovery_run, broken):
+    from common.pool_resume import recover_checkpoint
+    config_path, path, entry = recovery_run
+    data = json.dumps(entry(2)).encode() + b'\n' + broken + json.dumps(entry(0)).encode()
+    path.write_bytes(data)
+    report = recover_checkpoint(config_path, path.parent)
+    assert Path(report['backup']).read_bytes() == data
+    assert report['unreadable_records'] == 1
+    assert report['saved_problems'] == 2 and report['remaining_problems'] == 1
+    kept = [json.loads(line) for line in path.read_bytes().splitlines()]
+    assert kept == [entry(2), entry(0)]
+    assert path.read_bytes().endswith(b'\n')
+    assert recover_checkpoint(config_path, path.parent) is None
+
+
+def test_recovery_does_not_hide_source_mismatch(recovery_run):
+    from common.pool_resume import recover_checkpoint
+    config_path, path, entry = recovery_run
+    wrong = entry(1)
+    wrong['id'] = 'wrong-source'
+    data = b'broken\n' + json.dumps(wrong).encode() + b'\n'
+    path.write_bytes(data)
+    with pytest.raises(ValueError, match='ID mismatch'):
+        recover_checkpoint(config_path, path.parent)
+    assert path.read_bytes() == data
+    assert not list(path.parent.glob('*.tmp'))
+
+
+def test_recovery_stops_if_live_writer_changes_journal(recovery_run, monkeypatch):
+    from common.pool_resume import recover_checkpoint
+    from pipeline import sample_sft_pool as sampling
+    config_path, path, entry = recovery_run
+    path.write_bytes(b'broken\n' + json.dumps(entry(0)).encode() + b'\n')
+    original = sampling.prepare
+    def concurrently_append(*args):
+        with path.open('ab') as f:
+            f.write(json.dumps(entry(1)).encode() + b'\n')
+        return original(*args)
+    monkeypatch.setattr(sampling, 'prepare', concurrently_append)
+    with pytest.raises(RuntimeError, match='changed during validation'):
+        recover_checkpoint(config_path, path.parent)
+    assert path.read_bytes().startswith(b'broken\n')
+    assert json.loads(path.read_bytes().splitlines()[-1]) == entry(1)

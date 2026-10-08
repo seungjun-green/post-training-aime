@@ -60,7 +60,7 @@ def cells(include_resume=True):
         저장됩니다. 준비 코드가 smoke용 ID 목록도 기록하지만 답변 생성은 전체 실행에서만 합니다.
         '''),
         code('''
-        run_logged([str(Path(EVAL_ENV) / 'bin/python'), '-m', 'eval.pool_grading_checks'],
+        pool_progress.run_pool_logged([str(Path(EVAL_ENV) / 'bin/python'), '-m', 'eval.pool_grading_checks'],
                    cwd=CODE_ROOT, log_path=Path(CODE_ROOT) / 'grading_checks.log')
         import yaml
         CONFIG = yaml.safe_load((Path(CODE_ROOT) / 'configs/sft_pool_sampling.yaml').read_text())
@@ -77,7 +77,7 @@ def cells(include_resume=True):
                    '--config', str(CONFIG_PATH), '--run-dir', str(RUN_DIR)]
         subprocess.check_call([str(Path(EVAL_ENV) / 'bin/python'), '-m', 'common.pool_progress',
                                '--check-resume', str(CONFIG_PATH), str(RUN_DIR)], cwd=CODE_ROOT)
-        run_logged(COMMAND + ['--mode', 'prepare'], cwd=CODE_ROOT,
+        pool_progress.run_pool_logged(COMMAND + ['--mode', 'prepare'], cwd=CODE_ROOT,
                    log_path=RUN_DIR / 'prepare_console.log')
         manifest = json.loads((RUN_DIR / 'manifest.json').read_text())
         print('고정된 HF 버전:', manifest['dataset_revision'])
@@ -96,7 +96,7 @@ def cells(include_resume=True):
         전체 생성에는 오랜 시간이 걸릴 수 있습니다. 진행 상황은 완료 수·경과 시간·예상 남은 시간을 보여주는 tqdm 진행 막대에 표시됩니다. 전체 로그는 full_console.log에 보존됩니다.
         '''),
         code('''
-        run_logged(COMMAND + ['--mode', 'full'], cwd=CODE_ROOT,
+        pool_progress.run_pool_logged(COMMAND + ['--mode', 'full'], cwd=CODE_ROOT,
                    log_path=RUN_DIR / 'full_console.log')
         summary = json.loads((RUN_DIR / 'full/summary.json').read_text())
         print(f"Completed: {summary['rows']:,} problems / {summary['responses']:,} responses")
@@ -116,7 +116,7 @@ def cells(include_resume=True):
         '''),
         code('''
         if UPLOAD_FULL:
-            run_logged(COMMAND + ['--mode', 'upload'], cwd=CODE_ROOT,
+            pool_progress.run_pool_logged(COMMAND + ['--mode', 'upload'], cwd=CODE_ROOT,
                        log_path=RUN_DIR / 'upload_console.log')
             receipt = json.loads((RUN_DIR / 'upload_receipt.json').read_text())
             print('업로드 및 검증 완료:', receipt['url'])
@@ -128,12 +128,12 @@ def cells(include_resume=True):
         result[1].source = result[1].source.replace(
             "DRIVE_ROOT =", "RUN_MODE = 'new'  # auto: resume this RUN_NAME if found; resume: require it; new: never overwrite.\nDRIVE_ROOT =", 1)
         result[0].source += "\n\nThis notebook defaults to a fresh run (RUN_MODE='new'). To resume it later, keep the same RUN_NAME and change RUN_MODE to 'resume' or 'auto', then Run all. Saved settings are restored automatically. RUN_MODE='resume' requires an existing run; 'new' requires an empty directory."
-        result[4].source += "\n\nSaved runs restore their settings and pinned input. Code/filter changes still require the original compatible notebook or a new run name. A disconnected session regenerates only unfinished problems; completed problems are reused. Do not launch two sessions on the same run directory."
+        result[4].source += "\n\nSaved runs restore their settings and pinned input. Code/filter changes still require the original compatible notebook or a new run name. A disconnected session regenerates only unfinished problems; completed problems are reused. Stop other generation sessions before resuming. Unreadable checkpoint records are backed up and removed only after all surviving records pass source/annotation validation; missing problems are regenerated. Do not launch two sessions on the same run directory."
         result[3].source += '\nimport common.pool_resume as pool_resume\nimportlib.reload(pool_resume)'
         result[5].source = result[5].source.replace(
             'RUN_DIR.mkdir(parents=True, exist_ok=True)',
             'CONFIG = pool_resume.resolve_run_config(CONFIG, RUN_DIR, RUN_MODE)\nRUN_DIR.mkdir(parents=True, exist_ok=True)')
-        result[5].source += '\npool_resume.show_checkpoint_status(RUN_DIR)'
+        result[5].source += '\nrun_setup_logged([str(Path(EVAL_ENV) / "bin/python"), "-m", "common.pool_resume",\n                  "--recover", str(CONFIG_PATH), str(RUN_DIR)],\n                 cwd=CODE_ROOT, log_path=RUN_DIR / "checkpoint_recovery.log")\npool_resume.show_checkpoint_status(RUN_DIR)'
     return result
 
 

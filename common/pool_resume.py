@@ -59,3 +59,87 @@ def show_checkpoint_status(run_dir):
     if interrupted_tail:
         print('An interrupted final checkpoint will be repaired automatically; its problem will be regenerated.')
     return {'saved': len(seen), 'total': total, 'remaining': total-len(seen)}
+
+
+def recover_checkpoint(config_path, run_dir):
+    """Back up and remove unreadable JSONL records; validate all survivors before replace.
+
+    Run only after stopping all generation sessions that write to this run directory.
+    Valid JSON with bad IDs, duplicate indices or invalid annotations is NOT discarded.
+    """
+    import os
+    import shutil
+    import uuid
+    import yaml
+    from common.io import write_json
+    from pipeline import sample_sft_pool as sampling
+
+    run_dir = Path(run_dir)
+    journal = run_dir / 'responses.jsonl'
+    if not journal.exists():
+        return None
+    def fingerprint():
+        stat = journal.stat()
+        return stat.st_size, stat.st_mtime_ns
+    initial = fingerprint()
+    invalid = []
+    with journal.open('rb') as source:
+        while True:
+            offset = source.tell()
+            line = source.readline()
+            if not line:
+                break
+            try:
+                json.loads(line)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                invalid.append(offset)
+    if not invalid:
+        return None
+    if fingerprint() != initial:
+        raise RuntimeError('Checkpoint changed during inspection. Stop all other generation sessions first.')
+    recovery_dir = run_dir / 'checkpoint_backups'
+    recovery_dir.mkdir(exist_ok=True)
+    tag = uuid.uuid4().hex
+    backup = recovery_dir / f'responses-{tag}.jsonl'
+    shutil.copyfile(journal, backup)
+    backup_hash = sampling.hash_file(backup)
+    if fingerprint() != initial or sampling.hash_file(journal) != backup_hash:
+        raise RuntimeError('Checkpoint changed while backing up. Original journal was not replaced.')
+    temporary = run_dir / f'responses-recovered-{tag}.tmp'
+    try:
+        with backup.open('rb') as source, temporary.open('wb') as output:
+            for line in source:
+                try:
+                    json.loads(line)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    continue
+                output.write(line if line.endswith(b'\n') else line + b'\n')
+            output.flush()
+            os.fsync(output.fileno())
+        cfg = yaml.safe_load(Path(config_path).read_text())
+        root = Path(__file__).resolve().parents[1]
+        dataset, _ = sampling.prepare(cfg, root, run_dir, os.environ.get('HF_TOKEN'))
+        recovered = sampling.scan_journal(temporary, dataset, cfg['data'])
+        # Do not replace any journal that was appended to while validation ran.
+        if fingerprint() != initial or sampling.hash_file(journal) != backup_hash:
+            raise RuntimeError('Checkpoint changed during validation. Original journal was not replaced.')
+        report = {'backup': str(backup), 'backup_sha256': backup_hash,
+                  'unreadable_records': len(invalid), 'unreadable_byte_offsets': invalid,
+                  'saved_problems': len(recovered), 'remaining_problems': len(dataset)-len(recovered)}
+        # Record the backup location before committing the replacement.
+        write_json(recovery_dir / f'recovery-{tag}.json', report)
+        temporary.replace(journal)
+        print(f'Recovered checkpoint: kept {len(recovered):,} completed problems; removed {len(invalid):,} unreadable records.')
+        print(f'Original checkpoint backup: {backup}')
+        print('Missing problems will be regenerated. No saved scores or responses were invented.')
+        return report
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--recover', nargs=2, metavar=('CONFIG', 'RUN_DIR'), required=True)
+    args = parser.parse_args()
+    recover_checkpoint(*args.recover)

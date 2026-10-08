@@ -73,9 +73,14 @@ def cells():
         Path(CODE_ROOT).mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(io.BytesIO(base64.b64decode({payload([ROOT / p for p in FILES])!r}))) as bundle:
             bundle.extractall(CODE_ROOT)
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', 'uv==0.11.22', 'PyYAML==6.0.3'])
-        subprocess.check_call([sys.executable, 'scripts/setup_eval_runtime.py', '--venv', EVAL_ENV], cwd=CODE_ROOT)
         sys.path.insert(0, CODE_ROOT)
+        from common.process import run_logged as run_setup_logged
+        print('Notebook Python:', sys.version.split()[0])
+        print('Installing the separate Python 3.12 GPU environment:', EVAL_ENV)
+        run_setup_logged([sys.executable, '-m', 'pip', 'install', 'uv==0.11.22', 'PyYAML==6.0.3'],
+                         cwd=CODE_ROOT, log_path=Path(CODE_ROOT) / 'bootstrap_setup.log')
+        run_setup_logged([sys.executable, 'scripts/setup_eval_runtime.py', '--venv', EVAL_ENV],
+                         cwd=CODE_ROOT, log_path=Path(CODE_ROOT) / 'runtime_setup.log')
         from common.process import run_logged
         '''),
         markdown('''
