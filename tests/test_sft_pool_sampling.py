@@ -234,3 +234,70 @@ def test_qwen_base_eos_and_chat_end_stop_ids():
     tokenizer.eos_token_id = 151645
     with pytest.raises(ValueError, match='Unexpected EOS'):
         sampling.qwen_stop_ids(tokenizer)
+
+
+def test_latest_cleaned_source_pins_once_and_discovers_rows(tmp_path, monkeypatch):
+    import huggingface_hub
+    cfg = config()
+    cfg['data'].update(revision='main', expected_rows=None, require_text_cleanup=True)
+    source = fixture_data(55)
+    loaded = []
+    checks = []
+    head = ['a' * 40]
+    class Api:
+        def __init__(self, **kwargs): pass
+        def dataset_info(self, *args, **kwargs):
+            assert kwargs['revision'] == 'main'
+            return SimpleNamespace(sha=head[0])
+        def model_info(self, *args, **kwargs):
+            return SimpleNamespace(sha=cfg['model']['revision'])
+    def load(cfg, revision, token):
+        loaded.append(revision)
+        return source
+    def cleanup(spec, revision, token):
+        checks.append(revision)
+        return {'retained_rows':55}
+    monkeypatch.setattr(huggingface_hub, 'HfApi', Api)
+    monkeypatch.setattr(sampling, 'load_source', load)
+    monkeypatch.setattr(sampling, 'cleaned_source_report', cleanup)
+    _, first = sampling.prepare(cfg, ROOT, tmp_path, None)
+    assert first['source_rows'] == 55 and first['dataset_revision'] == 'a'*40
+    head[0] = 'b'*40
+    _, again = sampling.prepare(cfg, ROOT, tmp_path, None)
+    assert first == again
+    assert loaded == checks == ['a'*40, 'a'*40]
+    monkeypatch.setattr(sampling, 'cleaned_source_report', lambda *args: {'retained_rows':54})
+    with pytest.raises(ValueError, match='Cleanup report row count'):
+        sampling.prepare(cfg, ROOT, tmp_path, None)
+
+
+def test_load_source_dynamic_or_explicit_count(monkeypatch):
+    import datasets
+    cfg = config()
+    monkeypatch.setattr(datasets, 'load_dataset', lambda *args, **kwargs: fixture_data(55))
+    cfg['data']['expected_rows'] = None
+    assert len(sampling.load_source(cfg, 'a'*40, None)) == 55
+    cfg['data']['expected_rows'] = 56
+    with pytest.raises(ValueError, match='Expected 56 rows'):
+        sampling.load_source(cfg, 'a'*40, None)
+
+
+def test_cleanup_publication_required_before_smoke(tmp_path, monkeypatch):
+    import huggingface_hub
+    card = tmp_path/'README.md'
+    report = tmp_path/'summary.json'
+    cfg = config()
+    requested = []
+    def download(repo, filename, **kwargs):
+        requested.append((filename, kwargs['revision']))
+        return str(card if filename == 'README.md' else report)
+    monkeypatch.setattr(huggingface_hub, 'hf_hub_download', download)
+    card.write_text('---\nconfigs:\n- config_name: default\n  data_files:\n  - split: train\n    path: data/train.parquet\n---\nOriginal dataset')
+    with pytest.raises(ValueError, match='Finish the cleanup-and-upload notebook'):
+        sampling.cleaned_source_report(cfg['data'], 'a'*40, None)
+    card.write_text(card.read_text().replace('data/train.parquet', 'cleaning/text-only/run/train-cleaned.parquet'))
+    data = {'policy_version':'text-only-exclusions-v1', 'repo_id':cfg['data']['repo'],
+            'source_config':'default','retained_rows':55}
+    report.write_text(json.dumps(data))
+    assert sampling.cleaned_source_report(cfg['data'], 'a'*40, None) == data
+    assert requested[-1] == ('cleaning/text-only/run/summary.json', 'a'*40)

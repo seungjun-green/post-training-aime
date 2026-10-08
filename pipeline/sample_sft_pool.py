@@ -35,7 +35,7 @@ def code_hash(root):
     paths = ['pipeline/sample_sft_pool.py', 'common/io.py', 'common/math_text.py',
              'common/english_prompts.py', 'eval/scoring.py', 'eval/batched_generation.py',
              'eval/engines.py', 'common/prompts.py', 'requirements-eval.lock',
-             'scripts/setup_eval_runtime.py', 'eval/final_answer.py',
+             'scripts/setup_eval_runtime.py', 'eval/final_answer.py', 'eval/other_answers.py',
              'pipeline/sft_pool_quality.py', 'configs/sft_pool_quality.yaml']
     return digest({name: (Path(root) / name).read_text() for name in paths})
 
@@ -44,7 +44,7 @@ def load_source(cfg, revision, token):
     from datasets import load_dataset
     spec = cfg['data']
     ds = load_dataset(spec['repo'], name=spec['config'], split=spec['split'], revision=revision, token=token)
-    if len(ds) != spec['expected_rows']:
+    if spec.get('expected_rows') is not None and len(ds) != spec['expected_rows']:
         raise ValueError(f'Expected {spec["expected_rows"]} rows, got {len(ds)}')
     needed = {spec['id_column'], spec['problem_column'], spec['answer_column']}
     if not needed <= set(ds.column_names):
@@ -61,6 +61,29 @@ def load_source(cfg, revision, token):
             raise ValueError('Source has an empty gold answer')
     return ds
 
+
+
+def cleaned_source_report(spec, revision, token):
+    """Require the cleanup notebook's published train path and report at this commit."""
+    from huggingface_hub import DatasetCard, hf_hub_download
+    card_path = hf_hub_download(spec['repo'], 'README.md', repo_type='dataset', revision=revision, token=token)
+    metadata = DatasetCard(Path(card_path).read_text()).data.to_dict()
+    configuration = next((c for c in metadata.get('configs', [])
+                          if c['config_name'] == spec['config']), {})
+    files = configuration.get('data_files', [])
+    train_paths = [entry['path'] for entry in files if isinstance(entry, dict) and entry.get('split') == spec['split']]
+    if (len(train_paths) != 1 or not isinstance(train_paths[0], str) or
+            not train_paths[0].startswith('cleaning/text-only/') or
+            not train_paths[0].endswith('/train-cleaned.parquet')):
+        raise ValueError('The selected HF dataset has no published text-cleanup split. '
+                         'Finish the cleanup-and-upload notebook first, then rerun with a new RUN_NAME.')
+    report_path = str(Path(train_paths[0]).parent / 'summary.json')
+    local_report = hf_hub_download(spec['repo'], report_path, repo_type='dataset', revision=revision, token=token)
+    report = json.loads(Path(local_report).read_text())
+    if (report.get('policy_version') != 'text-only-exclusions-v1' or
+            report.get('repo_id') != spec['repo'] or report.get('source_config') != spec['config']):
+        raise ValueError('Unexpected cleanup report; refusing to use an unverified source.')
+    return report
 
 def select_smoke(count, seed, size=50):
     if count < size:
@@ -110,7 +133,17 @@ def prepare(cfg, root, run_dir, token):
                     'model_revision': model_revision, 'code_hash': code_hash(root),
                     'prompt_protocol': 'repository English boxed-answer instruction with pinned native tokenizer template',
                     'grading': GRADING_VERSION}
+    cleanup = (cleaned_source_report(cfg['data'], manifest['dataset_revision'], token)
+               if cfg['data'].get('require_text_cleanup') else None)
     ds = load_source(cfg, manifest['dataset_revision'], token)
+    if manifest.get('source_rows', len(ds)) != len(ds):
+        raise ValueError('Pinned source row count changed')
+    manifest['source_rows'] = len(ds)
+    if cleanup is not None:
+        if cleanup['retained_rows'] != len(ds):
+            raise ValueError('Cleanup report row count does not match the published train split')
+        manifest['source_cleanup'] = cleanup
+        print(f'Published text-cleanup verified: {len(ds):,} source rows', flush=True)
     # Hash source content, not the loader's cache fingerprint.
     h = hashlib.sha256()
     for row in ds:
@@ -146,7 +179,7 @@ def sample_seed(seed, identifier):
     return int(hashlib.sha256(f'{seed}:{identifier}'.encode()).hexdigest()[:8], 16) % (2**31)
 
 
-def annotate(responses, gold, timeout=5, problem='', audit_output=None):
+def annotate(responses, gold, timeout=5, problem='', audit_output=None, answer_type=None):
     if len(responses) != 8:
         raise ValueError('Expected exactly eight outputs')
     result = {key: [] for key in COLUMNS if key != 'num_correct'}
@@ -157,7 +190,7 @@ def annotate(responses, gold, timeout=5, problem='', audit_output=None):
             raise ValueError('Malformed generation or unexpected finish reason')
         extracted = ''
         try:
-            extracted, correct, decision = score_final(text, gold, problem, timeout=timeout)
+            extracted, correct, decision = score_final(text, gold, problem, timeout=timeout, answer_type=answer_type)
             errors.append(None)
         except Exception as error:
             correct = False
@@ -300,7 +333,7 @@ def generate(cfg, root, run_dir, token, mode):
             grading_audit = []
             annotation, errors = annotate(responses, ds[i][cfg['data']['answer_column']],
                                           cfg['sampling']['verify_timeout_seconds'],
-                                          problem=ds[i][cfg['data']['problem_column']], audit_output=grading_audit)
+                                          problem=ds[i][cfg['data']['problem_column']], answer_type=ds[i].get('answer_type'), audit_output=grading_audit)
             append_jsonl(journal, {'source_index': i, 'id': job['key'],
                                   'annotation': annotation, 'grading_errors': errors,
                                   'grading_audit': grading_audit,
@@ -530,7 +563,7 @@ def regrade_smoke(input_path, root, output, cfg):
                       'finish_reason': row['finish_reasons'][i]} for i in range(8)]
         details = []
         updated, errors = annotate(generated, row['gold_answer'], cfg['sampling']['verify_timeout_seconds'],
-                                   problem=row['problem'], audit_output=details)
+                                   problem=row['problem'], audit_output=details, answer_type=row.get('answer_type'))
         old_total += row['num_correct']
         new_total += updated['num_correct']
         changes.append({'id': row['id'], 'old_gold': previous[row['id']]['gold_answer'], 'gold': row['gold_answer'],

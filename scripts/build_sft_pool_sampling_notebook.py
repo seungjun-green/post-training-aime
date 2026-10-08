@@ -6,7 +6,7 @@ FILES = [
     'common/prompts.py', 'common/english_prompts.py', 'eval/__init__.py',
     'eval/scoring.py', 'eval/engines.py', 'eval/batched_generation.py',
     'pipeline/__init__.py', 'pipeline/sample_sft_pool.py', 'pipeline/sft_pool_quality.py',
-    'eval/final_answer.py', 'eval/pool_grading_checks.py', 'configs/sft_pool_quality.yaml',
+    'eval/final_answer.py', 'eval/other_answers.py', 'eval/pool_grading_checks.py', 'configs/sft_pool_quality.yaml',
     'configs/sft_pool_smoke_ids.json',
     'configs/sft_pool_sampling.yaml', 'scripts/setup_eval_runtime.py',
     'requirements-eval.lock',
@@ -19,8 +19,11 @@ def cells():
         # Eight Qwen2.5-3B base responses per problem — smoke test, review, full run
 
         Input and upload destination: **Seungjun/clean-math-sft-pool-30k**.
-        The verified source commit contains **28,905 rows** (despite its 30k name).
-        The notebook screens the source before generation. The full run generates eight
+        On the first run this notebook resolves **the latest HF commit**, verifies the
+        published text-cleanup report, and detects the actual source row count.
+        Resume uses that same pinned commit even if the Hub later changes. No manual
+        commit or row-count edits are needed. Finish the cleanup-and-upload notebook first.
+        The notebook applies its existing additional quality screening before generation. The full run generates eight
         responses per eligible row; exclusions and verified gold corrections are audited.
         This uses the pinned **Qwen/Qwen2.5-3B base** weights, not an SFT/RL checkpoint.
         It follows the repository's English instruction and native tokenizer template.
@@ -39,7 +42,7 @@ def cells():
         '''),
         code('''
         # Run settings. Choose a NEW RUN_NAME whenever you change model/sampling settings.
-        RUN_NAME = 'qwen25-3b-base-eight-v4'
+        RUN_NAME = 'qwen25-3b-base-eight-cleaned-other-v1'
         DRIVE_ROOT = '/content/drive/MyDrive/LG-SFT-Pool-Sampling'
         CODE_ROOT = '/content/lg-sft-pool-sampling'
         EVAL_ENV = '/content/lg-eval-env'
@@ -99,6 +102,7 @@ def cells():
                    cwd=CODE_ROOT, log_path=Path(CODE_ROOT) / 'grading_checks.log')
         import yaml
         CONFIG = yaml.safe_load((Path(CODE_ROOT) / 'configs/sft_pool_sampling.yaml').read_text())
+        CONFIG['data'].update(revision='main', expected_rows=None, require_text_cleanup=True)
         CONFIG['sampling'].update(temperature=TEMPERATURE, top_p=TOP_P,
                                   max_new_tokens=MAX_NEW_TOKENS, seed=SEED)
         CONFIG['engine']['max_num_seqs'] = MAX_NUM_SEQS
@@ -114,6 +118,9 @@ def cells():
                    '--config', str(CONFIG_PATH), '--run-dir', str(RUN_DIR)]
         run_logged(COMMAND + ['--mode', 'prepare'], cwd=CODE_ROOT, log_path=RUN_DIR / 'prepare_console.log')
         selection = [json.loads(line) for line in (RUN_DIR / 'smoke_selection.jsonl').read_text().splitlines()]
+        manifest = json.loads((RUN_DIR / 'manifest.json').read_text())
+        print('Pinned cleaned HF commit:', manifest['dataset_revision'])
+        print('Rows in cleaned HF source:', manifest['source_rows'])
         print('Quality screening:', (RUN_DIR / 'quality_summary.json').read_text())
         print('Every exclusion/correction:', RUN_DIR / 'quality_decisions.jsonl')
         print('Selection/replacement report:', (RUN_DIR / 'smoke_selection_summary.json').read_text())
@@ -156,6 +163,11 @@ def cells():
         The scorer prefers the **last `\\boxed{...}`**, then accepts a clear explicit
         final-answer statement or unambiguous final math line. It never searches the
         working for the gold value. Missing/ambiguous answers are stored as `""` and false.
+        For `answer_type="other"` only, clock times, ratios, explicit base numerals,
+        percentages, singleton numeric-string lists, and consistent numeric equality
+        chains are normalized before Math-Verify compares them. Colon answers require
+        question context to distinguish clock times from ratios; ambiguous formats fail
+        with an audit reason. Other answer types keep their previous grading behavior.
         Complete equations are preserved. Rational univariate polynomial equations
         (degree at most 12) are compared up to a nonzero constant; variable renaming
         is allowed only when the question asks to construct an equation. Factorization

@@ -1,9 +1,40 @@
-# Eight base-model responses per eligible SFT pool problem (v4)
+# Eight base-model responses per eligible SFT pool problem (cleaned-source update)
 
 Open `notebooks/sample_clean_sft_pool_qwen3b_8.ipynb` in GPU Colab and enable
 `HF_TOKEN` in Colab Secrets. The notebook embeds all required project files.
-Use the new default `qwen25-3b-base-eight-v4` run name; older journals must not mix
+Use the new default `qwen25-3b-base-eight-cleaned-other-v1` run name; older journals must not mix
 with the revised grading and quality policy. Full generation and upload default off.
+
+## Other-answer format update
+
+The new `explicit-final-v3-other` policy applies additional format normalization only
+to rows whose `answer_type` is `other`. Time-of-day answers are converted to minutes
+when question context establishes clock time; ratio answers are converted to fractions
+when context establishes a ratio. Ambiguous colon notation fails with an audit reason.
+Explicit base numerals, numeric percentages, singleton numeric-string list wrappers,
+and consistent numeric equality chains are normalized before Math-Verify comparison.
+Each numeric equality is checked; a malformed exponent or inconsistent equality is
+not silently repaired. Powers, factorials, inequalities, and expressions still use
+Math-Verify. This update does not add general tuple-family interpretation or fix golds.
+
+For an existing full run, keep its original notebook/journal protocol. Use the separate
+CPU notebook `notebooks/regrade_other_answers.ipynb` on exported JSONL or Parquet files.
+It preserves all rows, source fields, response text, token counts, and finish reasons;
+only extraction/grade/count fields of other rows may change. It writes separate result,
+audit, and summary files without generation, source screening, row removal, or HF upload.
+The current sampling notebook includes the new grader for new runs and uses a fresh
+run name. The bundled CPU gate now has 21 checks.
+
+## Cleaned source selection
+
+The notebook resolves the latest HF commit on the first preparation, requires the
+text-cleanup notebook's published train path/report, and discovers the actual row
+count. It records the commit and count in the run manifest. Resume reads the same
+commit even if `main` moves, so old and new source rows cannot mix. If cleanup has
+not been published, preparation stops before model generation with a specific message.
+No manual commit or row-count edits are needed. Full generation and upload remain off.
+The previous additional quality rules still apply to the cleaned HF source; actual
+eligible and replayed counts are printed during preparation.
 
 ## What changed
 
@@ -32,7 +63,7 @@ Benchmark grading elsewhere in this repository is unchanged.
 
 ## Source screening and its limits
 
-The pinned source contains 28,905 rows. The v4 full-source preflight retains 19,885,
+For historical context, the original pinned source contained 28,905 rows. The v4 preflight retained 19,885,
 quarantines 9,020 for review, and applies six mathematically reviewed gold corrections.
 These counts are screening outcomes, not a claim that all quarantined rows are wrong
 or that every retained reference is correct.
@@ -59,7 +90,7 @@ files remain stored when the complete annotated dataset is eventually published.
 ## Controlled smoke comparison
 
 `REPLAY_LAST_SMOKE=True` is the notebook default. It selects the 32 still-eligible IDs
-from `smoke_results (1).jsonl`, then fills the 18 excluded slots with seeded random
+from `smoke_results (1).jsonl` under the previous source; the cleaned source may retain fewer. It fills excluded slots with seeded random
 eligible rows without replacement. `smoke_selection_summary.json` lists shared,
 excluded, and replacement IDs. Compare only matching question IDs; new questions do
 not form a controlled before/after sample. Set the toggle to False for 50 fresh random

@@ -4,7 +4,7 @@ import re
 from common.math_text import last_boxed
 
 # Keep benchmark scoring unchanged; this policy is explicitly versioned for the pool.
-VERSION = 'explicit-final-v2'
+VERSION = 'explicit-final-v3-other'
 MATH_SPAN = re.compile(r'\$\$([\s\S]*?)\$\$|\$([^$\n]+)\$|\\\[([\s\S]*?)\\\]|\\\((.*?)\\\)')
 CONCLUSION = re.compile(r'\b(?:therefore|thus|hence|so|in conclusion)\b|\b(?:the\s+)?final answer\b|\banswer\s*:', re.I)
 
@@ -23,13 +23,18 @@ def clean_math(value):
     return value
 
 
-def math_only(value):
+def math_only(value, allow_other=False):
     value = clean_math(value).rstrip('.').strip()
     if not value or len(value) > 400 or re.search(r'[\n;]|\b(?:or|and)\b', value):
         return None
     # Permit a small unit vocabulary in LaTeX labels, without accepting arbitrary prose.
     # This affects lexical validation only; the original expression goes to Math-Verify.
     lexical = re.sub(r'\\(?:text|mathrm)\s*\{[~\s]*(?:mm|cm|km|m|mg|kg|g|s|ft|in|yd)[~\s]*\}', '', value)
+    if allow_other:
+        from eval.other_answers import special_candidate
+        special = special_candidate(value)
+        if special is not None:
+            return special
     words = re.sub(r'\\[A-Za-z]+', '', lexical)
     if re.search(r'[A-Za-z]{2,}', words):
         return None
@@ -40,7 +45,7 @@ def math_only(value):
     return value
 
 
-def sentence_answer(sentence):
+def sentence_answer(sentence, allow_other=False):
     """Extract one claimed value, without looking at any reference answer."""
     if re.search(r"\b(?:not|wrong|incorrect|cannot|isn't)\b", sentence, re.I):
         return None
@@ -49,7 +54,7 @@ def sentence_answer(sentence):
         emphasis = emphasized[0]
         outside = sentence[:emphasis.start()] + sentence[emphasis.end():]
         if not re.search(r'\d|\bor\b|\band\b', outside):
-            candidate = math_only(emphasis.group(1))
+            candidate = math_only(emphasis.group(1), allow_other)
             if candidate:
                 return candidate
     sentence = sentence.replace('**', '').strip()
@@ -68,7 +73,7 @@ def sentence_answer(sentence):
         outside = sentence[:span.start()] + sentence[span.end():]
         if re.search(r'\d|\bor\b', outside):
             return None
-        return math_only(next(g for g in span.groups() if g is not None))
+        return math_only(next(g for g in span.groups() if g is not None), allow_other)
     if len(spans) > 1:
         return None
     # Explicit answer marker, or grammatical statement "there are 2.1 pints".
@@ -76,7 +81,7 @@ def sentence_answer(sentence):
         return None
     tail = sentence
     # Prefer an entire expression before resorting to a numeric value plus prose/units.
-    whole = math_only(tail)
+    whole = math_only(tail, allow_other)
     if whole:
         return whole
     number = re.match(r'([+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:\s*/\s*\d+)?)(?=\s|[.,;!]|$)', tail)
@@ -88,7 +93,8 @@ def sentence_answer(sentence):
     return number.group(1)
 
 
-def extract_final(response, problem=''):
+def extract_final(response, problem='', answer_type=None):
+    allow_other = answer_type == 'other'
     boxed = last_boxed(response)
     if boxed is not None:
         value = clean_math(boxed)
@@ -99,13 +105,15 @@ def extract_final(response, problem=''):
         # Code is never treated as a final answer; keep explicit prose before code.
         prose = re.sub(r'```[\s\S]*?(?:```|$)', '', response)
         anchors = list(CONCLUSION.finditer(prose))
+        if allow_other and not anchors:
+            anchors = list(re.finditer(r'\b(?:the\s+)?answer\s+is\b', prose, re.I))
         value, method = None, 'missing'
         if anchors:
             tail = prose[anchors[-1].start():].strip()
             tail = re.sub(r'(:|\bis)\s*\n\s*\n', r'\1 ', tail)
             # First sentence of the last conclusion, preserving decimal points and LaTeX.
             sentence = re.split(r'(?<=[.!?])\s+(?=[A-Z])|\n\s*\n', tail, maxsplit=1)[0]
-            value = sentence_answer(sentence)
+            value = sentence_answer(sentence, allow_other)
             method = 'explicit_final' if value else 'ambiguous_final'
         else:
             lines = [line.strip() for line in prose.splitlines() if line.strip()]
@@ -114,7 +122,7 @@ def extract_final(response, problem=''):
                 span = MATH_SPAN.fullmatch(line)
                 if span:
                     line = next(g for g in span.groups() if g is not None)
-                value = math_only(line)
+                value = math_only(line, allow_other)
                 method = 'final_math_line' if value else 'missing'
         if value is None:
             return '', {'method': method, 'raw_answer': ''}
@@ -209,28 +217,37 @@ def factor_form_valid(expression):
     return True
 
 
-def score_final(response, gold, problem='', timeout=5):
+def score_final(response, gold, problem='', timeout=5, answer_type=None):
     from math_verify import verify
     from math_verify.utils import timeout as bounded
     import sympy as sp
-    answer, audit = extract_final(response, problem)
+    answer, audit = extract_final(response, problem, answer_type)
     audit['policy_version'] = VERSION
     if not answer:
         return answer, False, audit
     reference = strip_degrees(str(gold).strip().strip('$'), problem)
-    # Apply the same gold-independent normalization to both sides.
-    try:
-        normalized = normalize_radix(answer, problem)
-        reference = normalize_radix(reference, problem)
-    except ValueError:
-        audit['method'] = 'invalid_radix'
-        return '', False, audit
-    audit['radix_normalized'] = normalized != answer
-    answer = normalized
-    if math_only(answer) is None:
+    # Only other answers receive the new typed normalization. Other types retain v2 behavior.
+    if answer_type == 'other':
+        from eval.other_answers import OtherFormatError, normalize_pair
+        try:
+            canonical, reference, answer, details = normalize_pair(answer, reference, problem, timeout)
+            audit.update(details)
+        except OtherFormatError as error:
+            audit.update(method='unsupported_other_format', failure=str(error))
+            return '', False, audit
+    else:
+        try:
+            normalized = normalize_radix(answer, problem)
+            reference = normalize_radix(reference, problem)
+        except ValueError:
+            audit['method'] = 'invalid_radix'
+            return '', False, audit
+        audit['radix_normalized'] = normalized != answer
+        answer = canonical = normalized
+    if math_only(canonical) is None:
         audit['method'] = 'invalid_math'
         return '', False, audit
-    a, g = parse_math(answer, timeout), parse_math(reference, timeout)
+    a, g = parse_math(canonical, timeout), parse_math(reference, timeout)
     audit.update(parsed=bool(a), gold_parsed=bool(g))
     if not a:
         audit['method'] = 'unparseable_final'

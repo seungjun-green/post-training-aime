@@ -1,0 +1,110 @@
+{
+  "input_path": "/Users/seungjunlee/Downloads/smoke_results (3).jsonl",
+  "input_sha256": "c7e8a85df6f371cc25c7e97b446c251236237b701c38f25748b2bd0cbfd7e93f",
+  "metrics": {
+    "rows": 50,
+    "unique_ids": 50,
+    "responses": 400,
+    "recorded_correct": 51,
+    "recorded_accuracy": 0.1275,
+    "rows_with_any_correct": 19,
+    "empty_extractions": 114,
+    "finish_reasons": {
+      "stop": 397,
+      "length": 3
+    },
+    "num_correct_histogram": {
+      "2": 2,
+      "3": 3,
+      "0": 31,
+      "1": 8,
+      "6": 2,
+      "4": 2,
+      "5": 2
+    },
+    "token_mean": 710.34,
+    "token_median": 575.0,
+    "token_total": 284136,
+    "sub_sources": {
+      "prealgebra": 1,
+      "olympiads": 24,
+      "cn_contest": 8,
+      "precalculus": 1,
+      "aops_forum": 8,
+      "number_theory": 1,
+      "geometry": 2,
+      "algebra": 2,
+      "counting_and_probability": 1,
+      "inequalities": 1,
+      "synthetic_math": 1
+    }
+  },
+  "validation": {
+    "all_vectors_valid": true,
+    "all_num_correct_consistent": true,
+    "regrading_mismatches": 0,
+    "three_filter_matches": [],
+    "note": "All 400 stored extractions/grades reproduced with current code. No run manifest or token IDs supplied: actual Hub commit, runtime, and exact stopping tokens cannot be independently established from this JSONL. Filtering checks concern question text, not generated responses."
+  },
+  "comparison": {
+    "previous_file": "/Users/seungjunlee/Downloads/smoke_results (2).jsonl",
+    "shared_rows": 30,
+    "shared_responses": 240,
+    "previous_correct_shared": 41,
+    "current_correct_shared": 35,
+    "current_new_rows": 20,
+    "current_correct_new_rows": 16,
+    "previous_correct_nonshared": 41,
+    "note": "Overall accuracy changes combine a different 20-question subset and stochastic generation differences on shared questions; do not attribute the whole drop to model regression or cleanup."
+  },
+  "source_issues": [
+    {
+      "file_line": 31,
+      "id": "c3b7140fae3418f85efbbae8682476e5c03ccb45164e89b2bc96258f4913ced0",
+      "kind": "corrupted_or_incomplete_reference",
+      "problem": "1. Two ingots of gold and silver contain a total of $a \\mathrm{~kg}$ of gold. If the percentage of gold in the first ingot is the same as the percentage of gold in the second ingot, the two ingots would have a total of $b \\mathrm{~kg}$ of gold, and if the percentage of gold in the second ingot is the same as the percentage of gold in the first ingot, the two ingots would have a total of $c \\mathrm{~kg}$ of gold. How many kilograms of gold are in the first, and how many in the second ingot?",
+      "stored_gold": "\\frac{(-b)}{-b}",
+      "evidence": "The reference (-b)/(-b) is 1 for b != 0, while the question asks for two gold masses that depend on a,b,c. For example, ingots of mass 4 and 8 kg with gold fractions 1/2 and 3/4 give a=8,b=9,c=6 and actual gold masses 2 and 6 kg, contradicting the constant reference. In the nondegenerate case, the masses are c*(a-b)/(c-b) and b*(c-a)/(c-b)."
+    },
+    {
+      "file_line": 27,
+      "id": "83347b74e0c251963925b046e3f612e74df63b0b004e0c66f84041e44e8f7d86",
+      "kind": "reference_numeric_discrepancy",
+      "problem": "A servant confesses to his master that he stole one liter of wine from a 250-liter barrel every day for 50 days and always replaced the missing amount with water. What percentage of wine was still in the barrel?",
+      "stored_gold": "81.846",
+      "evidence": "Under the standard well-mixed replacement interpretation, 100*(249/250)^50 = 81.84024506760999 percent, which rounds to 81.840 at three decimals, not the stored 81.846. None of the eight generated final answers matches this corrected value."
+    },
+    {
+      "file_line": 6,
+      "id": "78e7e4c36c90e15a29bae36c2986e0dde3ea120b79f172e8ddf36e128ae906fa",
+      "kind": "additional_generation_instruction",
+      "problem": "Let's calculate the value of the expression $P$, where the number of nested radicals is $n$ (>1).\n\n$$\n\\begin{aligned}\n& P=\\sqrt{a+\\sqrt{a+\\ldots+\\sqrt{a+\\sqrt{b}}}}, \\text{ where } \\\\\n& a=\\sqrt{76+24 \\sqrt{10}}-2 \\sqrt{19-3 \\sqrt{40}} \\text{ and } \\\\\n& b=\\sqrt{165+4 \\sqrt{1616}}-\\sqrt{165-4 \\sqrt{1616}}\n\\end{aligned}\n$$\n\nCreate a similar expression with the same properties.",
+      "stored_gold": "4",
+      "evidence": "The text appends \"Create a similar expression with the same properties.\" to a calculation problem. This is outside the three requested filters and changes what a complete response asks for. It warrants source review; the calculation gold 4 itself is consistent with a=12,b=16."
+    }
+  ],
+  "grading_issues": [
+    {
+      "file_line": 39,
+      "id": "e3982b49d4212881e90667abafffa3bb838bfa953ee7c5c77f79ee005ae51a94",
+      "kind": "tuple_family_false_negatives",
+      "problem": "9. 15 Determine all positive real number tuples $\\left(x_{1}, x_{2}, x_{3}, x_{4}, x_{5}\\right)$ that satisfy the following inequalities:\n$$\\begin{array}{l}\n\\left(x_{1}^{2}-x_{3} x_{5}\\right)\\left(x_{2}^{2}-x_{3} x_{5}\\right) \\leqslant 0 \\\\\n\\left(x_{2}^{2}-x_{4} x_{1}\\right)\\left(x_{3}^{2}-x_{4} x_{1}\\right) \\leqslant 0 \\\\\n\\left(x_{3}^{2}-x_{5} x_{2}\\right)\\left(x_{4}^{2}-x_{5} x_{2}\\right) \\leqslant 0 \\\\\n\\left(x_{4}^{2}-x_{1} x_{3}\\right)\\left(x_{5}^{2}-x_{1} x_{3}\\right) \\leqslant 0 \\\\\n\\left(x_{5}^{2}-x_{2} \\dot{x}_{4}\\right)\\left(x_{1}^{2}-x_{2} x_{4}\\right) \\leqslant 0\n\\end{array}$$",
+      "stored_gold": "x_{1}=x_{2}=x_{3}=x_{4}=x_{5}",
+      "evidence": "Responses 1 and 8 give (x,x,x,x,x), x>0, and (a,a,a,a,a), a>0. These final answers express the stored equal-coordinate condition but are marked false. Response 3 uses the equality chain and receives credit. This audit assesses final-answer equivalence, not validity of every derivation.",
+      "response_numbers": [
+        1,
+        8
+      ]
+    },
+    {
+      "file_line": 41,
+      "id": "90c3b67422840a15040cc1499c57d0adfb5652d5ea292f0d73c0fb324317fdca",
+      "kind": "clock_format_not_supported",
+      "problem": "16. On Sunday, after Little Fat got up, he found that his alarm clock was broken. He estimated the time and set the alarm clock to 7:00, then he walked to the science museum and saw that the electronic clock on the roof pointed to 8:50. He visited the museum for one and a half hours and returned home at the same speed. When he got home, Little Fat saw that the alarm clock pointed to 11:50. Try to answer: At this time, to what time should the alarm clock be set to be accurate?",
+      "stored_gold": "12:00",
+      "evidence": "All eight extractions are empty. The lexical check rejects colon-separated times. Inspected generated final times are wrong; the unsupported format does not imply all eight responses deserve credit. This remains an answer-format coverage gap."
+    }
+  ],
+  "recommendation": "The three requested textual filters show no remaining matches in this sample. Keep full generation paused if the goal is trustworthy num_correct labels: handle or explicitly exclude unsupported answer types and review mathematical references separately. Saved responses can be regraded without another GPU run.",
+  "limitation": "Targeted manual audit, not a complete adjudication of every question and response."
+}
