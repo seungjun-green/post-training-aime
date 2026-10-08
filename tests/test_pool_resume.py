@@ -171,3 +171,46 @@ def test_generation_cell_cannot_bypass_recovery():
     assert 'pool_progress.run_pool_logged' in nb.cells[7].source
     assert "RUN_NAME = 'qwen25-3b-fresh-run-002'" in nb.cells[1].source
     assert "RUN_MODE = 'auto'" in nb.cells[1].source
+
+
+def test_resume_never_opens_checkpoint_in_readwrite_mode(recovery_run, monkeypatch):
+    """Reproduce rb recovery succeeding while the old r+b generation reader fails."""
+    from common.pool_resume import generate_with_recovery
+    from common import pool_progress
+    from pipeline import sample_sft_pool as sampling
+    config_path, path, entry = recovery_run
+    path.write_bytes(json.dumps(entry(0)).encode() + b'\n')
+    original_open = Path.open
+    modes = []
+    def mounted_open(self, mode='r', *args, **kwargs):
+        if self == path:
+            modes.append(mode)
+            if mode == 'r+b':
+                return io.BytesIO(b'corrupt read/write view\n')
+        return original_open(self, mode, *args, **kwargs)
+    monkeypatch.setattr(Path, 'open', mounted_open)
+    ds = [{'id': f'row-{i}'} for i in range(3)]
+    with pytest.raises(ValueError, match='Corrupt checkpoint'):
+        sampling.scan_journal(path, ds, {'id_column': 'id'})
+    modes.clear()
+    monkeypatch.setattr(pool_progress, 'check_resume', lambda *a: None)
+    original_scan = sampling.scan_journal
+    def generate(cfg, *args):
+        assert set(sampling.scan_journal(path, ds, cfg['data'])) == {0}
+        assert set(sampling.scan_journal(path, ds, cfg['data'])) == {0}  # export scans again
+        return 'resumed'
+    monkeypatch.setattr(sampling, 'generate', generate)
+    assert generate_with_recovery(config_path, path.parent) == 'resumed'
+    assert modes and set(modes) == {'rb'}
+    assert sampling.scan_journal is original_scan
+
+
+def test_complete_last_record_without_newline_is_backed_up_and_normalized(recovery_run):
+    from common.pool_resume import recover_checkpoint
+    config_path, path, entry = recovery_run
+    original = json.dumps(entry(1)).encode()
+    path.write_bytes(original)
+    report = recover_checkpoint(config_path, path.parent)
+    assert report['unreadable_records'] == 0
+    assert Path(report['backup']).read_bytes() == original
+    assert path.read_bytes() == original + b'\n'

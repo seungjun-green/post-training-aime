@@ -61,6 +61,38 @@ def show_checkpoint_status(run_dir):
     return {'saved': len(seen), 'total': total, 'remaining': total-len(seen)}
 
 
+
+def scan_checkpoint_readonly(path, dataset, spec):
+    """Validate and index with the same read-only I/O used by recovery.
+
+    Google Drive is a remote mount. Scanning must not open a healthy journal for
+    random writes. Repairs are an explicit backed-up operation before generation.
+    """
+    from pipeline.sample_sft_pool import validate_annotation
+    path = Path(path)
+    if not path.exists():
+        return {}
+    index = {}
+    with path.open('rb') as source:
+        while True:
+            offset = source.tell()
+            line = source.readline()
+            if not line:
+                break
+            try:
+                entry = json.loads(line)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                raise ValueError(f'Unreadable checkpoint in read-only scan at byte {offset}; '
+                                 'the file may have changed after recovery. Stop other sessions using this run.') from None
+            i = entry['source_index']
+            if type(i) is not int or not 0 <= i < len(dataset) or i in index:
+                raise ValueError('Duplicate or invalid checkpoint index')
+            if entry['id'] != str(dataset[i][spec['id_column']]):
+                raise ValueError('Checkpoint/source ID mismatch')
+            validate_annotation(entry['annotation'])
+            index[i] = offset
+    return index
+
 def recover_checkpoint(config_path, run_dir):
     """Back up and remove unreadable JSONL records; validate all survivors before replace.
 
@@ -83,17 +115,19 @@ def recover_checkpoint(config_path, run_dir):
         return stat.st_size, stat.st_mtime_ns
     initial = fingerprint()
     invalid = []
+    needs_newline = False
     with journal.open('rb') as source:
         while True:
             offset = source.tell()
             line = source.readline()
             if not line:
                 break
+            needs_newline = not line.endswith(b'\n')
             try:
                 json.loads(line)
             except (json.JSONDecodeError, UnicodeDecodeError):
                 invalid.append(offset)
-    if not invalid:
+    if not invalid and not needs_newline:
         return None
     if fingerprint() != initial:
         raise RuntimeError('Checkpoint changed during inspection. Stop all other generation sessions first.')
@@ -119,7 +153,7 @@ def recover_checkpoint(config_path, run_dir):
         cfg = yaml.safe_load(Path(config_path).read_text())
         root = Path(__file__).resolve().parents[1]
         dataset, _ = sampling.prepare(cfg, root, run_dir, os.environ.get('HF_TOKEN'))
-        recovered = sampling.scan_journal(temporary, dataset, cfg['data'])
+        recovered = scan_checkpoint_readonly(temporary, dataset, cfg['data'])
         # Do not replace any journal that was appended to while validation ran.
         if fingerprint() != initial or sampling.hash_file(journal) != backup_hash:
             raise RuntimeError('Checkpoint changed during validation. Original journal was not replaced.')
@@ -146,8 +180,15 @@ def generate_with_recovery(config_path, run_dir):
     check_resume(config_path, run_dir)
     recover_checkpoint(config_path, run_dir)
     cfg = yaml.safe_load(Path(config_path).read_text())
-    return sampling.generate(cfg, Path(__file__).resolve().parents[1], Path(run_dir),
-                             os.environ.get('HF_TOKEN'), 'full')
+    # Storage adapter only: retain the existing pinned sampling/grading code and
+    # manifest signature. Both generation and export use this read-only scanner.
+    original_scan = sampling.scan_journal
+    sampling.scan_journal = scan_checkpoint_readonly
+    try:
+        return sampling.generate(cfg, Path(__file__).resolve().parents[1], Path(run_dir),
+                                 os.environ.get('HF_TOKEN'), 'full')
+    finally:
+        sampling.scan_journal = original_scan
 
 
 if __name__ == '__main__':
