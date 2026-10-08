@@ -117,7 +117,7 @@ class PoolProgress:
             if self.handle is None:
                 self.handle = display(data, raw=True, display_id=True)
             else:
-                self.handle.update(data)
+                self.handle.update(data, raw=True)
         else:
             self.stream.write(data['text/plain'] + '\n')
             self.stream.flush()
@@ -141,3 +141,49 @@ def run_pool_logged(command, *, cwd, log_path, title='Sampling'):
         raise
     progress.finish('Complete')
     return result
+
+
+def check_resume(config_path, run_dir):
+    """Read-only diagnostics: never rewrite a manifest or bypass its signature guard."""
+    import json
+    from pathlib import Path
+    import yaml
+    from pipeline.sample_sft_pool import code_hash
+    from common.io import digest
+    manifest_path = Path(run_dir) / 'manifest.json'
+    if not manifest_path.exists():
+        return
+    saved = json.loads(manifest_path.read_text())
+    requested = yaml.safe_load(Path(config_path).read_text())
+    changes = []
+    def compare(old, new, prefix=''):
+        if isinstance(old, dict) and isinstance(new, dict):
+            for key in sorted(set(old) | set(new)):
+                name = f'{prefix}.{key}' if prefix else key
+                if key not in old:
+                    changes.append(f'{name}: added {new[key]!r}')
+                elif key not in new:
+                    changes.append(f'{name}: removed (saved {old[key]!r})')
+                else:
+                    compare(old[key], new[key], name)
+        elif old != new:
+            changes.append(f'{prefix}: saved={old!r}; requested={new!r}')
+    compare(saved['config'], requested)
+    current_hash = code_hash(Path(__file__).resolve().parents[1])
+    if saved.get('code_hash') != current_hash:
+        changes.append('Bundled experiment code differs from the saved run. Restore the original experiment bundle to resume.')
+    if saved['signature'] == digest({'config': requested, 'code_hash': current_hash}):
+        return
+    if not changes:
+        changes.append('Saved signature is inconsistent with its config/code hash; inspect the manifest without editing it.')
+    details = '\n'.join('- ' + change for change in changes)
+    raise ValueError('Resume blocked; existing checkpoints are untouched.\n' + details +
+                     '\nRestore the saved settings/code to continue this run. Do not delete or edit the manifest to bypass this check.')
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--check-resume', nargs=2, metavar=('CONFIG', 'RUN_DIR'), required=True)
+    args = parser.parse_args()
+    check_resume(*args.check_resume)

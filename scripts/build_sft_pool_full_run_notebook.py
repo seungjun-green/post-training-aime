@@ -72,6 +72,8 @@ def cells():
         CONFIG_PATH.write_text(yaml.safe_dump(CONFIG, sort_keys=False))
         COMMAND = [str(Path(EVAL_ENV) / 'bin/python'), '-m', 'pipeline.sample_sft_pool',
                    '--config', str(CONFIG_PATH), '--run-dir', str(RUN_DIR)]
+        subprocess.check_call([str(Path(EVAL_ENV) / 'bin/python'), '-m', 'common.pool_progress',
+                               '--check-resume', str(CONFIG_PATH), str(RUN_DIR)], cwd=CODE_ROOT)
         run_logged(COMMAND + ['--mode', 'prepare'], cwd=CODE_ROOT,
                    log_path=RUN_DIR / 'prepare_console.log')
         manifest = json.loads((RUN_DIR / 'manifest.json').read_text())
