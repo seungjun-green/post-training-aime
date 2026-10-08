@@ -81,9 +81,10 @@ def scan_checkpoint_readonly(path, dataset, spec):
                 break
             try:
                 entry = json.loads(line)
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                raise ValueError(f'Unreadable checkpoint in read-only scan at byte {offset}; '
-                                 'the file may have changed after recovery. Stop other sessions using this run.') from None
+            except (json.JSONDecodeError, UnicodeDecodeError) as error:
+                raise ValueError(f'Unreadable checkpoint at byte {offset}, record length {len(line)} bytes: '
+                                 f'{type(error).__name__}: {error}. '
+                                 'Cause unconfirmed; preserve the journal and run the read-only diagnostic.') from error
             i = entry['source_index']
             if type(i) is not int or not 0 <= i < len(dataset) or i in index:
                 raise ValueError('Duplicate or invalid checkpoint index')
@@ -94,13 +95,10 @@ def scan_checkpoint_readonly(path, dataset, spec):
     return index
 
 def recover_checkpoint(config_path, run_dir):
-    """Back up and remove unreadable JSONL records; validate all survivors before replace.
-
-    Run only after stopping all generation sessions that write to this run directory.
-    Valid JSON with bad IDs, duplicate indices or invalid annotations is NOT discarded.
-    """
+    """Repair a local snapshot, then verify the replacement read back from Drive."""
     import os
     import shutil
+    import tempfile
     import uuid
     import yaml
     from common.io import write_json
@@ -114,61 +112,75 @@ def recover_checkpoint(config_path, run_dir):
         stat = journal.stat()
         return stat.st_size, stat.st_mtime_ns
     initial = fingerprint()
-    invalid = []
-    needs_newline = False
-    with journal.open('rb') as source:
-        while True:
-            offset = source.tell()
-            line = source.readline()
-            if not line:
-                break
-            needs_newline = not line.endswith(b'\n')
-            try:
-                json.loads(line)
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                invalid.append(offset)
-    if not invalid and not needs_newline:
-        return None
-    if fingerprint() != initial:
-        raise RuntimeError('Checkpoint changed during inspection. Stop all other generation sessions first.')
-    recovery_dir = run_dir / 'checkpoint_backups'
-    recovery_dir.mkdir(exist_ok=True)
-    tag = uuid.uuid4().hex
-    backup = recovery_dir / f'responses-{tag}.jsonl'
-    shutil.copyfile(journal, backup)
-    backup_hash = sampling.hash_file(backup)
-    if fingerprint() != initial or sampling.hash_file(journal) != backup_hash:
-        raise RuntimeError('Checkpoint changed while backing up. Original journal was not replaced.')
-    temporary = run_dir / f'responses-recovered-{tag}.tmp'
-    try:
-        with backup.open('rb') as source, temporary.open('wb') as output:
-            for line in source:
+    # Inspect the exact byte snapshot that will be repaired. Do not use a separate
+    # preliminary scan of the remote mount to decide whether recovery is needed.
+    with tempfile.TemporaryDirectory(prefix='pool-recovery-') as directory:
+        snapshot = Path(directory) / 'original.jsonl'
+        repaired = Path(directory) / 'repaired.jsonl'
+        shutil.copyfile(journal, snapshot)
+        original_hash = sampling.hash_file(snapshot)
+        if fingerprint() != initial or sampling.hash_file(journal) != original_hash:
+            raise RuntimeError('Checkpoint changed during snapshot. Stop other sessions; original was not replaced.')
+        invalid, needs_newline = [], False
+        with snapshot.open('rb') as source, repaired.open('wb') as output:
+            while True:
+                offset = source.tell()
+                line = source.readline()
+                if not line:
+                    break
+                needs_newline = not line.endswith(b'\n')
                 try:
                     json.loads(line)
-                except (json.JSONDecodeError, UnicodeDecodeError):
+                except (json.JSONDecodeError, UnicodeDecodeError) as error:
+                    invalid.append({'offset': offset, 'bytes': len(line), 'error': str(error)})
                     continue
                 output.write(line if line.endswith(b'\n') else line + b'\n')
             output.flush()
             os.fsync(output.fileno())
+        if not invalid and not needs_newline:
+            print('Checkpoint JSON integrity: passed (local snapshot matches Drive).', flush=True)
+            return None
+        recovery_dir = run_dir / 'checkpoint_backups'
+        recovery_dir.mkdir(exist_ok=True)
+        tag = uuid.uuid4().hex
+        backup = recovery_dir / f'responses-{tag}.jsonl'
+        shutil.copyfile(snapshot, backup)
+        if sampling.hash_file(backup) != original_hash:
+            raise RuntimeError('Backup verification failed; original journal was not replaced.')
         cfg = yaml.safe_load(Path(config_path).read_text())
         root = Path(__file__).resolve().parents[1]
         dataset, _ = sampling.prepare(cfg, root, run_dir, os.environ.get('HF_TOKEN'))
-        recovered = scan_checkpoint_readonly(temporary, dataset, cfg['data'])
-        # Do not replace any journal that was appended to while validation ran.
-        if fingerprint() != initial or sampling.hash_file(journal) != backup_hash:
-            raise RuntimeError('Checkpoint changed during validation. Original journal was not replaced.')
-        report = {'backup': str(backup), 'backup_sha256': backup_hash,
-                  'unreadable_records': len(invalid), 'unreadable_byte_offsets': invalid,
-                  'saved_problems': len(recovered), 'remaining_problems': len(dataset)-len(recovered)}
-        # Record the backup location before committing the replacement.
-        write_json(recovery_dir / f'recovery-{tag}.json', report)
-        temporary.replace(journal)
-        print(f'Recovered checkpoint: kept {len(recovered):,} completed problems; removed {len(invalid):,} unreadable records.')
-        print(f'Original checkpoint backup: {backup}')
-        print('Missing problems will be regenerated. No saved scores or responses were invented.')
-        return report
-    finally:
-        temporary.unlink(missing_ok=True)
+        recovered = scan_checkpoint_readonly(repaired, dataset, cfg['data'])
+        repaired_hash = sampling.hash_file(repaired)
+        temporary = run_dir / f'responses-recovered-{tag}.tmp'
+        try:
+            shutil.copyfile(repaired, temporary)
+            if sampling.hash_file(temporary) != repaired_hash:
+                raise RuntimeError('Staged repair failed Drive readback verification; original was not replaced.')
+            if fingerprint() != initial or sampling.hash_file(journal) != original_hash:
+                raise RuntimeError('Checkpoint changed during validation. Original journal was not replaced.')
+            report = {'backup': str(backup), 'backup_sha256': original_hash,
+                      'repaired_sha256': repaired_hash,
+                      'unreadable_records': len(invalid),
+                      'unreadable_byte_offsets': [r['offset'] for r in invalid], 'errors': invalid,
+                      'saved_problems': len(recovered), 'remaining_problems': len(dataset)-len(recovered),
+                      'verified': False}
+            report_path = recovery_dir / f'recovery-{tag}.json'
+            write_json(report_path, report)
+            temporary.replace(journal)
+            # Validate the actual published journal, not just a temporary file.
+            if sampling.hash_file(journal) != repaired_hash:
+                raise RuntimeError(f'Repaired journal readback differs from the local repair. Original backup: {backup}')
+            if scan_checkpoint_readonly(journal, dataset, cfg['data']) != recovered:
+                raise RuntimeError(f'Repaired journal index differs on Drive. Original backup: {backup}')
+            report['verified'] = True
+            write_json(report_path, report)
+            print(f'Recovery VERIFIED: kept {len(recovered):,} completed problems; removed {len(invalid):,} unreadable records.', flush=True)
+            print(f'Original checkpoint backup: {backup}', flush=True)
+            print(f'Remaining problems to generate: {len(dataset)-len(recovered):,}', flush=True)
+            return report
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 def generate_with_recovery(config_path, run_dir):

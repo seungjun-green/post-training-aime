@@ -214,3 +214,35 @@ def test_complete_last_record_without_newline_is_backed_up_and_normalized(recove
     assert report['unreadable_records'] == 0
     assert Path(report['backup']).read_bytes() == original
     assert path.read_bytes() == original + b'\n'
+
+
+def test_recovery_reports_only_after_drive_readback_matches(recovery_run):
+    from common.pool_resume import recover_checkpoint
+    config_path, path, entry = recovery_run
+    data = json.dumps(entry(0)).encode() + b'\n' + b'\x00' * 12303 + b'\n' + json.dumps(entry(2)).encode() + b'\n'
+    path.write_bytes(data)
+    result = recover_checkpoint(config_path, path.parent)
+    assert result['verified'] is True
+    assert result['errors'][0]['bytes'] == 12304
+    assert 'Expecting value' in result['errors'][0]['error']
+    assert Path(result['backup']).read_bytes() == data
+    assert len(path.read_bytes().splitlines()) == 2
+
+
+def test_recovery_detects_failed_replacement_and_retains_backup(recovery_run, monkeypatch):
+    from common.pool_resume import recover_checkpoint
+    config_path, path, entry = recovery_run
+    data = json.dumps(entry(0)).encode() + b'\nbroken\n'
+    path.write_bytes(data)
+    replace = Path.replace
+    def faulty_replace(self, target):
+        result = replace(self, target)
+        if Path(target) == path:
+            path.write_bytes(data)
+        return result
+    monkeypatch.setattr(Path, 'replace', faulty_replace)
+    with pytest.raises(RuntimeError, match='readback differs'):
+        recover_checkpoint(config_path, path.parent)
+    assert next((path.parent / 'checkpoint_backups').glob('responses-*.jsonl')).read_bytes() == data
+    report = json.loads(next((path.parent / 'checkpoint_backups').glob('recovery-*.json')).read_text())
+    assert report['verified'] is False

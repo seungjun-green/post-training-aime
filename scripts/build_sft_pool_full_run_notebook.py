@@ -9,7 +9,7 @@ def cells(include_resume=True):
     install = sampling_cells()[3]
     install.source = install.source.replace(
         payload([ROOT / p for p in FILES]),
-        payload([ROOT / p for p in FILES + ['common/pool_progress.py'] + (['common/pool_resume.py'] if include_resume else [])]))
+        payload([ROOT / p for p in FILES + ['common/pool_progress.py'] + (['common/pool_resume.py', 'scripts/diagnose_pool_checkpoint.py'] if include_resume else [])]))
     install.source += '\nimport importlib\nimport common.pool_progress as pool_progress\nimportlib.reload(pool_progress)\nrun_logged = pool_progress.run_pool_logged'
     result = [
         markdown('''
