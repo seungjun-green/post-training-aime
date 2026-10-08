@@ -11,7 +11,7 @@ Legend: — = not required; ☐ = pending; ◐ = running; ☑ = complete.
 | ID | Experiment | Training | Evaluation | Next dependency |
 | --- | --- | --- | --- | --- |
 | B0 | Qwen base | — | ☑ Complete (user reported) | — |
-| B-RL | Qwen base + RL | ☑ Complete: step 300 (user reported) | ☐ Step-300 notebook ready | Evaluate checkpoint 300 |
+| B-RL | Qwen base + RL | ☑ Complete: step 300 (user reported) | ☑ Complete (user reported) | — |
 | B-s1(kimi style) SFT | Qwen base + s1 (Kimi-style) SFT | ☑ Complete (user reported) | ☑ Complete (user reported) | — |
 | B-rejection sampling SFT | Qwen base + rejection sampling SFT | ☐ Planned | ☐ Pending | Define sampling source, filtering criteria, dataset, and SFT settings |
 | B-7B knowledge distillation SFT | Qwen base + 7B knowledge distillation SFT | ☐ Planned | ☐ Pending | Choose exact 7B teacher, dataset, target columns, and SFT settings |
@@ -24,14 +24,14 @@ Legend: — = not required; ☐ = pending; ◐ = running; ☑ = complete.
 
 **Implemented B0/I0/I-RL protocol:** AMC 2023 (40 problems) and MATH-500 (500), temperature 0, top-p 1, one response per problem, 20,480-token response cap. Same English question/instruction and existing final-box/math-equivalence scorer; each model uses its shipped native chat template/system message and EOS token. Base uses zero-shot chat formatting, not a few-shot completion protocol. Instruct/RL templates must match. Exact model/data/code/protocol records accompany the results.
 
-**Results received 2026-10-06:** scores and output paths below were supplied by the user from the completed evaluation. Drive artifacts have not been independently rechecked here; HF revisions are the notebook's pinned selections.
+**Results received 2026-10-06; B-RL added 2026-10-07:** scores and output paths below were supplied by the user from the completed evaluation. Drive artifacts have not been independently rechecked here; HF revisions are the notebook's pinned selections.
 
 Notebook: [evaluate_qwen25_3b_base_instruct_rl_amc_math.ipynb](notebooks/evaluate_qwen25_3b_base_instruct_rl_amc_math.ipynb). Self-contained, sequential evaluation of three models, optional six-response smoke, then `RUN_EVAL = True` for 1,620 responses. Resumes completed problems separately for each model.
 
 | ID | Evaluated checkpoint / HF revision | AMC correct / 40 | AMC accuracy | AMC mean tokens | MATH correct / 500 | MATH accuracy | MATH mean tokens |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | B0 | `Qwen/Qwen2.5-3B` @ `3aab1f1954e9cc14eb9509a215f9e5ca08227a9b` | 15 | 37.5% | 1745.6 | 274 | 54.8% | 1444.2 |
-| B-RL | `dapo_qwen25_3b_pretrained_base/checkpoint-300` (evaluation pending) | — | — | — | — | — | — |
+| B-RL | `dapo_qwen25_3b_pretrained_base/checkpoint-300` | 17 | 42.5% | 2340.3 | 321 | 64.2% | 895.1 |
 | B-s1(kimi style) SFT | `sft_qwen25_3b_base_s1_kimi/epoch_5` | 10 | 25.0% | 8556.8 | 257 | 51.4% | 6709.7 |
 | B-rejection sampling SFT | TBD | — | — | — | — | — | — |
 | B-7B knowledge distillation SFT | TBD | — | — | — | — | — | — |
@@ -62,14 +62,25 @@ Preparation with the real pinned base tokenizer verified all 14,068 local datase
 
 **B-RL restart history:** the previous attempt used an EOS override and the last supplied log showed 0/300 optimizer updates. Its files remain under `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rl/`. Stop that runtime and use the rebuilt notebook in a fresh Colab runtime. The corrected run uses `base-rl-native-eos/` and must start from the original base weights, not the previous attempt. Resume validation rejects manifests with the old tokenizer/generation settings. Local checks passed (23 tests, including saved EOS/PAD and resume behavior); GPU speed has not been verified.
 
-**B-RL completion (user reported):** the native-EOS base + RL run has completed all 300 optimizer updates. [evaluate_qwen25_3b_base_rl_checkpoint300_amc_math.ipynb](notebooks/evaluate_qwen25_3b_base_rl_checkpoint300_amc_math.ipynb) evaluates only `checkpoint-300` on AMC 2023 (40) and MATH-500 (500), temperature 0, one response per problem, 20,480-token cap. Preserves original `<|endoftext|>` EOS and the saved chat template, including `chat_template.jinja`. Self-contained notebook with optional two-problem smoke, full evaluation via `RUN_EVAL = True`, and resume. Step-300 scores are pending; checkpoint completion, identity, and weights are validated on Drive when the notebook runs.
+**B-RL completion (user reported):** the native-EOS base + RL run has completed all 300 optimizer updates. [evaluate_qwen25_3b_base_rl_checkpoint300_amc_math.ipynb](notebooks/evaluate_qwen25_3b_base_rl_checkpoint300_amc_math.ipynb) evaluates only `checkpoint-300` on AMC 2023 (40) and MATH-500 (500), temperature 0, one response per problem, 20,480-token cap. Preserves original `<|endoftext|>` EOS and the saved chat template, including `chat_template.jinja`. Self-contained notebook with optional two-problem smoke, full evaluation via `RUN_EVAL = True`, and resume. Evaluation completed (user reported 2026-10-07): AMC 2023 **17/40 (42.5%)**, mean **2340.3 tokens**; MATH-500 **321/500 (64.2%)**, mean **895.1 tokens**. Relative to B0, accuracy increased by **5.0** and **9.4 percentage points**, respectively. Scores and output paths were supplied by the user; Drive artifacts have not been independently inspected here.
 
 ```text
-# Step-300 evaluation output root (separate from checkpoint-140 results)
+# Completed step-300 evaluation output root (user reported; separate from checkpoint-140 results)
 /content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rl-native-eos/eval/amc2023_math500_temp0/dapo_qwen25_3b_pretrained_base/checkpoint-300/
 ```
 
 Under that root, `full/results/qwen_base_rl_step300.json` stores metrics, `full/results/qwen_base_rl_step300_generations.jsonl` stores answers and scores, and `full/summary_table.json` / `.csv` contain the benchmark table. Console logs are under `logs/` and smoke results under `smoke/`.
+
+**Exact step-300 evaluation files (user reported):**
+
+```text
+# Metrics
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rl-native-eos/eval/amc2023_math500_temp0/dapo_qwen25_3b_pretrained_base/checkpoint-300/full/results/qwen_base_rl_step300.json
+# Benchmark table
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rl-native-eos/eval/amc2023_math500_temp0/dapo_qwen25_3b_pretrained_base/checkpoint-300/full/summary_table.json
+# Generated answers and scores
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rl-native-eos/eval/amc2023_math500_temp0/dapo_qwen25_3b_pretrained_base/checkpoint-300/full/results/qwen_base_rl_step300_generations.jsonl
+```
 
 **B-RL intermediate checkpoint history (2026-10-07, user reported):** training had completed step 140 of 300 (46.7%). [evaluate_qwen25_3b_base_rl_checkpoint140_amc_math.ipynb](notebooks/evaluate_qwen25_3b_base_rl_checkpoint140_amc_math.ipynb) evaluates only the saved `checkpoint-140` on AMC 2023 (40) and MATH-500 (500), temperature 0, one response per problem, 20,480-token cap. Preserves the checkpoint's native `<|endoftext|>` EOS and saved chat template. Self-contained bundle, optional two-problem smoke, separate full evaluation with resume. No step-140 scores reported yet; Drive checkpoint validation runs in Colab. Use a separate GPU runtime if training continues.
 
@@ -99,7 +110,7 @@ These are absolute **Colab-mounted Drive paths** (`/content/drive/MyDrive/` = My
 | ID | Run root | Path status |
 | --- | --- | --- |
 | B0 | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/eval-base-instruct-rl-amc-math-temp0/base` | Completed evaluation outputs (user reported) |
-| B-RL | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rl-native-eos` | Native-EOS run: step 300 complete (user reported) |
+| B-RL | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rl-native-eos` | Completed step-300 training and evaluation (user reported) |
 | B-s1(kimi style) SFT | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-sft-v2-short` | Completed training and evaluation (user reported) |
 | B-rejection sampling SFT | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rejection-sampling-sft` | Planned; not configured yet |
 | B-7B knowledge distillation SFT | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-7b-distillation-sft` | Planned; not configured yet |

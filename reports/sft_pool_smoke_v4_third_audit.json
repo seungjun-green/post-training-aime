@@ -1,0 +1,144 @@
+{
+  "input_path": "/Users/seungjunlee/Downloads/smoke_results (2).jsonl",
+  "input_sha256": "2cae1baf31b736c8a36de710c823787c64f482c5f7699d094474365ff0dd0fdc",
+  "recommendation": "Hold full generation. The repaired equation/radix/factorization cases behave as intended, but source errors persist outside synthetic_math and unsupported answer types remain eligible. Review source scope and pre-generation answer-type eligibility before further GPU runs.",
+  "metrics": {
+    "rows": 50,
+    "unique_ids": 50,
+    "responses": 400,
+    "correct_responses": 82,
+    "accuracy_recorded": 0.205,
+    "rows_with_any_correct": 23,
+    "empty_extractions": 109,
+    "empty_extractions_with_stop": 108,
+    "finish_reasons": {
+      "stop": 397,
+      "length": 3
+    },
+    "num_correct_histogram": {
+      "4": 2,
+      "5": 6,
+      "0": 27,
+      "1": 7,
+      "2": 2,
+      "6": 2,
+      "3": 2,
+      "7": 1,
+      "8": 1
+    },
+    "token_mean": 728.365,
+    "token_median": 563.0,
+    "token_total": 291346,
+    "token_max": 8192,
+    "sub_sources": {
+      "prealgebra": 3,
+      "olympiads": 25,
+      "aops_forum": 6,
+      "cn_contest": 5,
+      "number_theory": 2,
+      "algebra": 2,
+      "geometry": 2,
+      "inequalities": 2,
+      "counting_and_probability": 2,
+      "synthetic_math": 1
+    }
+  },
+  "validation": {
+    "all_annotation_vectors_valid": true,
+    "regrading_mismatches": 0,
+    "note": "All 400 grades/extractions reproduced with local v4 code. Consistency is not semantic correctness. Raw token IDs and run manifest were not provided, so exact stop tokens/runtime settings cannot be inferred from this JSONL alone."
+  },
+  "comparison": {
+    "shared_rows": 32,
+    "shared_responses": 256,
+    "previous_correct_regraded_with_v4": 48,
+    "current_correct": 46,
+    "new_rows": 18,
+    "new_rows_correct": 36,
+    "note": "Same shared questions and grading policy, but new stochastic model outputs. The 48-to-46 difference does not establish a model regression."
+  },
+  "source_issues": [
+    {
+      "file_line": 13,
+      "id": "6156a28fefbf5b48a36c030cb390213cef9bcd83af956f5053aefd7eb4922e8d",
+      "sub_source": "olympiads",
+      "kind": "undefined_reference_and_translation_artifact",
+      "problem": "Let $E$ (a natural number) have all digits as 1, the number of its digits is $2k$, and let $F$ have all digits as 2, the number of its digits is $k$. Calculate the square root of $E-F$.\n\n \n\nTranslate the above text into English, please retain the original text's line breaks and format, and output the translation result directly.",
+      "stored_gold": "3A",
+      "evidence": "The question defines only E,F,k, but gold is 3A with A undefined. E-F=(10^k-1)^2/9, so the mathematical answer is (10^k-1)/3. Responses 2,7,8 give that expression but are marked false. The question also contains a leftover request to translate the text, which is dataset content rather than an instruction to this audit.",
+      "recommended_action": "Recover/clean the original question and reference or quarantine."
+    },
+    {
+      "file_line": 16,
+      "id": "8705af38be5de1967dc11c27a0e5245969cd349b612a79c3252b38a7beb09726",
+      "sub_source": "olympiads",
+      "kind": "inconsistent_functional_equation",
+      "problem": "3. Find $g(2021)$, if for any real $x, y$ the equality holds\n\n$$\ng(x-y)=2021(g(x)+g(y))-2022 x y\n$$",
+      "stored_gold": "2043231",
+      "evidence": "At x=y=0, g(0)=4042*g(0), hence g(0)=0. At y=0, g(x)=2021*g(x), hence g identically zero. At x=y=1 the original equation then requires 0=-2022. No function satisfies the stated conditions.",
+      "recommended_action": "Quarantine; recover the original source before attempting repair."
+    },
+    {
+      "file_line": 18,
+      "id": "76d3aea61a461197031bc96ae23150245facea00d2f10bbd062d4700d0d29997",
+      "sub_source": "cn_contest",
+      "kind": "ambiguous_probability_target",
+      "problem": "1. In the Cartesian coordinate system, there are eight points:\n$$\nA_{i}(i, 0), B_{i}(0, i)(i=1,2,3,4),\n$$\n\nDivide them into two groups, each containing four points, to form convex quadrilaterals $A B C D$ and $A^{\\prime} B^{\\prime} C^{\\prime} D^{\\prime}$. Then\n\nthe probability is $\\qquad$",
+      "stored_gold": "\\frac{5}{12}",
+      "evidence": "The probability target is incomplete as written. If it asks whether a uniform random partition into two groups of four yields two convex quadrilaterals, each group needs two points on each axis, yielding binom(4,2)^2/binom(8,4)=18/35 rather than 5/12. A missing event/condition could change the intended probability.",
+      "recommended_action": "Quarantine pending original-source review; do not silently replace the gold based on an inferred event."
+    },
+    {
+      "file_line": 47,
+      "id": "dd10179dae19e619404fe077bc8139bca16d40dae7e61a4a375b4067461bf8db",
+      "sub_source": "olympiads",
+      "kind": "incomplete_solution_set",
+      "problem": "Let $[x]$ be the integer part of a number $x$, and $\\{x\\}=x-[x]$. Solve the equation\n\n$$\n[x] \\cdot\\{x\\}=1991 x .\n$$",
+      "stored_gold": "-\\frac{1}{1992}",
+      "evidence": "x=0 satisfies [x]*{x}=1991*x but is absent from the reference. Using floor convention, x=-1/1992 also satisfies it. Writing x=n+t, n integral and 0<=t<1 gives t=1991*n/(n-1991), admitting only n=0,-1. Thus the full set is {0,-1/1992}.",
+      "recommended_action": "Repair the reference as a complete solution set if supported; otherwise quarantine."
+    }
+  ],
+  "grading_issues": [
+    {
+      "file_line": 39,
+      "id": "e3982b49d4212881e90667abafffa3bb838bfa953ee7c5c77f79ee005ae51a94",
+      "kind": "tuple_family_vs_equality_chain",
+      "evidence": "Responses 1 and 7 give the family (c,c,c,c,c), c>0, or the equivalent tuple assignment. These match the reference condition that all five positive coordinates are equal, but receive false. Answer correctness here is distinct from the validity of the generated derivation."
+    },
+    {
+      "file_line": 42,
+      "id": "90c3b67422840a15040cc1499c57d0adfb5652d5ea292f0d73c0fb324317fdca",
+      "kind": "unsupported_clock_format",
+      "evidence": "All eight extractions are empty. Explicit boxed times such as 6:00 or 8:30 are rejected by the lexical filter. A separate probe with the correct boxed 12:00 also returns empty/false. No generated response in this row was confirmed correct; this is a format-coverage failure, not eight lost correct answers."
+    }
+  ],
+  "fix_verification": [
+    {
+      "file_line": 9,
+      "result": "Complete polynomial equations are preserved. All eight fresh answers are wrong; the earlier correct response was not regenerated."
+    },
+    {
+      "file_line": 11,
+      "result": "Eight wrong/incomplete factorization responses receive no credit."
+    },
+    {
+      "file_line": 12,
+      "response_number": 8,
+      "result": "Correct boxed (10010)_2 is normalized to 18 and credited."
+    },
+    {
+      "file_line": 44,
+      "result": "Reviewed hexagon gold is 0."
+    },
+    {
+      "file_line": 45,
+      "result": "Reviewed circle/tangent gold is 3*r^2*sqrt(3)/8."
+    }
+  ],
+  "limitations": [
+    "Targeted manual audit; not a complete adjudication of all source problems and all response derivations.",
+    "Row 3 has unusual LaTeX spelling, but Math-Verify correctly parses its gold as exp(alpha*x)*sin(beta*x); a correct-expression probe passes, so it is not reported as a grading error.",
+    "Invalid-math extraction counts include unsupported legitimate formats as well as junk; they are not a model-quality metric in isolation."
+  ]
+}

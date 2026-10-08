@@ -1,0 +1,200 @@
+{
+  "input_path": "/Users/seungjunlee/Downloads/smoke_results.jsonl",
+  "input_sha256": "6a14e4b4125748a9a6f64e7bb9223001d11f42a243dda086f1a284ab1290ee29",
+  "recommendation": "Pause full generation; review source gold/input quality and final-answer extraction, then repeat smoke test.",
+  "metrics": {
+    "rows": 50,
+    "unique_ids": 50,
+    "responses": 400,
+    "correct_responses": 84,
+    "accuracy_recorded": 0.21,
+    "rows_with_any_correct": 25,
+    "num_correct_histogram": {
+      "0": 25,
+      "1": 6,
+      "2": 6,
+      "3": 4,
+      "4": 0,
+      "5": 1,
+      "6": 7,
+      "7": 1,
+      "8": 0
+    },
+    "finish_reasons": {
+      "stop": 393,
+      "length": 7
+    },
+    "empty_extractions": 119,
+    "empty_extractions_with_stop": 114,
+    "responses_under_50_tokens": 13,
+    "token_mean": 706.165,
+    "token_median": 502.5,
+    "token_total": 282466,
+    "token_max": 8192
+  },
+  "validation": {
+    "all_annotation_vectors_valid": true,
+    "all_num_correct_consistent": true,
+    "regrading_mismatches": [],
+    "token_lengths_note": "Recorded counts inspected; raw generated token IDs absent, so counts were not independently reconstructed.",
+    "stop_token_note": "finish_reasons do not identify the token that triggered stopping; this file alone cannot establish v1/v2 stop configuration."
+  },
+  "source_issues": [
+    {
+      "file_line": 26,
+      "id": "1be5f4a7b2e8232853dd5589ebe9364b4c63aa797a5d980f12be621ef5e0d259",
+      "kind": "incorrect_gold",
+      "problem": "Find the minimum value of the expression\n\\[\n\\frac{x^2 + 13}{\\sqrt{x^2 + 7}}\n\\]\nover all real numbers \\(x\\).",
+      "stored_gold": "2\\sqrt{6}",
+      "evidence": "Let t=x^2+7>=7. f(t)=sqrt(t)+6/sqrt(t), derivative=(t-6)/(2*t^(3/2))>0; minimum is 13/sqrt(7) at x=0, not 2*sqrt(6).",
+      "recommended_action": "Correct gold after source review; regrade saved responses. Four responses match corrected gold; two wrongly credited responses do not."
+    },
+    {
+      "file_line": 33,
+      "id": "8eca532d71b9ce3cddb7aed0e37ed96b94691424e72e34912d7273593c115861",
+      "kind": "incorrect_gold",
+      "problem": "2, ** Divide a circle into $n(\\geqslant 2)$ sectors $S_{1}, S_{2}, \\cdots, S_{n}$. Now, color these sectors using $m(\\geqslant 2)$ colors, with each sector being colored with exactly one color, and the requirement that adjacent sectors must have different colors. How many different coloring methods are there?",
+      "stored_gold": "(-1)^{n}+(-1)^{n}(-1)",
+      "evidence": "Stored gold (-1)^n+(-1)^n*(-1) is identically zero. Cycle coloring count is (m-1)^n+(-1)^n*(m-1); for m=3,n=3 it is 6. Response 1 supplies that general formula.",
+      "recommended_action": "Recover original reference answer; regrade."
+    },
+    {
+      "file_line": 36,
+      "id": "3f145748697fcc6a8661897deb89dd2c3187395ab03da2569c484ba9ad169a02",
+      "kind": "multipart_and_corrupt_gold",
+      "problem": "Problem 4. In a sports store, the sneakers were sold for 900 denars cheaper than the trainer. On sale, the sneakers were reduced by $10 \\%$ and the trainer by $5 \\%$. Gabi bought sneakers and a trainer on sale and paid a total of 5480 denars for them. How much did the sneakers and the trainer cost before the discount?",
+      "stored_gold": "25003400",
+      "evidence": "The problem asks two prices. The equations p_trainer=p_sneakers+900 and .9*p_sneakers+.95*p_trainer=5480 give 2500 and 3400; stored 25003400 concatenates these answers.",
+      "recommended_action": "Exclude under the single-answer pool policy."
+    },
+    {
+      "file_line": 38,
+      "id": "3978b925aea04ab787fbd253428bc93be0856696ec5829f94f193400a0939b38",
+      "kind": "incorrect_gold",
+      "problem": "Let's consider the prime number $2027$ for our new problem. Define $T = \\sum \\limits_{k=0}^{64} \\dbinom{2024}{k}$. Determine the remainder when $T$ is divided by $2027$.",
+      "stored_gold": "1090",
+      "evidence": "Exact integer arithmetic: sum(comb(2024,k), k=0..64) modulo 2027 = 1089, not 1090.",
+      "recommended_action": "Correct gold after source review; regrade."
+    },
+    {
+      "file_line": 43,
+      "id": "9b6b12a966b9eda49ec2b8748294ca8bcc83423543b8745081ce32ca66d2eab6",
+      "kind": "incorrect_gold",
+      "problem": "Example 8 Color each vertex of an $n(n \\geqslant 3)$-sided pyramid with one of $m(m \\geqslant 4)$ available colors, such that the endpoints of the same edge have different colors. How many different coloring methods are there?",
+      "stored_gold": "(-2)[(-2)^{n-1}+(-1)^{n}]",
+      "evidence": "Gold omits m and yields -6 for n=3. A triangular pyramid with m=4 colors is K4 and has 4!=24 colorings.",
+      "recommended_action": "Recover original reference answer or exclude."
+    },
+    {
+      "file_line": 46,
+      "id": "a72da61138d068a9bccf77152430d9b5b98c76536962354eb1baaf5c40b5524f",
+      "kind": "nonunique_answer_and_incorrect_gold",
+      "problem": "The five-digit numeral $4BB26$ is divisible by 7. What digit does $B$ represent?",
+      "stored_gold": "1",
+      "evidence": "4BB26=40026+1100*B. Both B=0 and B=7 are divisible by 7; B=1 is not.",
+      "recommended_action": "Exclude or repair the question and gold; current item has no unique digit answer."
+    },
+    {
+      "file_line": 24,
+      "id": "cc8a2031288b17cc4cfbe5e43f16e2480f205ea1133410983e58a1dfa4b173ed",
+      "kind": "missing_visual_input",
+      "problem": "This figure is cut out from a sheet of paper. Folding the sides upwards along the dashed lines, one gets a (non-equilateral) pyramid with a square base. Calculate the area of the base.\n[img]https://1.bp.blogspot.com/-lPpfHqfMMRY/XzcBIiF-n2I/AAAAAAAAMW8/nPs_mLe5C8srcxNz45Wg-_SqHlRAsAmigCLcBGAsYHQ/s0/2005%2BMohr%2Bp1.png[/img]",
+      "stored_gold": "24",
+      "evidence": "Question references a diagram only supplied as an external image URL. No dimensions are in the text and this is a text-only model.",
+      "recommended_action": "Exclude image-dependent items from this text-only pool."
+    },
+    {
+      "file_line": 19,
+      "id": "b81e11f8605e6a6671409a75929f5af0fa27040ea899ddba10f00c3dee4af660",
+      "kind": "malformed_question",
+      "problem": "The equation about $x$, $7 x^{2}-(k+13) x + k^{2}-k-2=0$, has two real roots $x_{1}, x_{2}$, and $00$.\n\nSince $0<x_{1}<1<x_{2}<2$, we have\n$$\n1<x_{1}+x_{2}=\\frac{k+13}{7}<3,\n$$\n$$\n0<x_{1} x_{2}=\\frac{k^{2}-k-2}{7}<2 \\text {. }\n$$",
+      "stored_gold": "\\frac{3-2 \\sqrt{21}}{3} < k < \\frac{3+2 \\sqrt{21}}{3}",
+      "evidence": "Text contains \"and $00$\" and then a solution-like \"Since ...\" fragment; original condition/question appears corrupted.",
+      "recommended_action": "Review against source or exclude."
+    },
+    {
+      "file_line": 30,
+      "id": "2407c1599a248b1ff3b8a66b1154d06a01b5d648472b2637226d885a46fe4612",
+      "kind": "ambiguous_gold",
+      "problem": "112. Find the limit of the absolute error of the number $a=$ $=1348$, if $\\varepsilon_{a}=0.04 \\%$.",
+      "stored_gold": "0.5",
+      "evidence": "1348*(0.04/100)=0.5392, while gold is 0.5. This may reflect a rounding convention absent from the text.",
+      "recommended_action": "Review original rounding convention; do not silently replace gold."
+    }
+  ],
+  "manually_confirmed_unboxed_answer_examples": [
+    {
+      "file_line": 5,
+      "response_1based": 2,
+      "id": "b61528a73c87d3e1efd9d015a54d78df94ab75689edabeaa8f5598299a38c129",
+      "clear_unboxed_final_answer": "231",
+      "recorded_correct": false,
+      "response": " groom\nLet's break down the steps:\n\n1. Think of a number (X).\n2. Add 90 to the number: X + 90.\n3. Subtract 27 from the result: (X + 90) - 27.\n4. Subtract the original number from the result: ((X + 90) - 27) - X.\n5. Multiply by 11: 11 * [((X + 90) - 27) - X].\n6. Divide by 3: 11 * [((X + 90) - 27) - X] / 3.\n\nNow, let's go through these steps with a general X:\n\n1. (X + 90) - 27 = X + 90 - 27 = X + 63.\n2. X + 63 - X = 63.\n3. 11 * 63 = 693.\n4. 693 / 3 = 231.\n\nSo, the final answer (guy truth) is 231. Let's confirm this with a Python script to ensure accuracy.\n```python\n# Let X be any integer number as the thought one\nX = 10\n\n# Steps\nstep1 = X + 90  # Step 2\nstep2 = step1 - 27  # Step 3\nstep3 = step2 - X  # Step 4\nstep4 = 11 * step3  # Step 5\nfinal_result = step4 / 3  # Step 6\n\nprint(final_result)\n```"
+    },
+    {
+      "file_line": 6,
+      "response_1based": 2,
+      "id": "5ebe3f92d0b49246ec4aa8c7c227ed536a551525bcec12c43709e799ef7c8aa3",
+      "clear_unboxed_final_answer": "3",
+      "recorded_correct": false,
+      "response": "To solve this problem, let's first understand the relationship given: the number of gallons of coffee \\( C \\) is inversely proportional to the hours of sleep \\( S \\). This can be written as:\n\n\\[ C \\propto \\frac{1}{S} \\]\n\nIn mathematical terms, this means:\n\n\\[ C = k \\cdot \\frac{1}{S} \\]\n\nwhere \\( k \\) is a constant of proportionality. We need to determine the value of \\( k \\) using the information provided for Monday.\n\n**Step 1: Determine the constant of proportionality \\( k \\).**\n\nOn Monday, the mathematician got 9 hours of sleep and drank 2 gallons of coffee. Using these values:\n\n\\[ 2 = k \\cdot \\frac{1}{9} \\]\n\nTo find \\( k \\), multiply both sides by 9:\n\n\\[ k = 2 \\cdot 9 = 18 \\]\n\nNow we know \\( k = 18 \\).\n\n**Step 2: Apply the constant \\( k \\) to find the number of gallons of coffee on Tuesday.**\n\nOn Tuesday, he got 6 hours of sleep. Using the same relationship:\n\n\\[ C = 18 \\cdot \\frac{1}{6} \\]\n\nCalculate the value:\n\n\\[ C = 18 \\cdot \\frac{1}{6} = 3 \\]\n\nSo, the number of gallons of coffee he drank on Tuesday was **3**."
+    },
+    {
+      "file_line": 14,
+      "response_1based": 1,
+      "id": "3952281fd344e23e858952a195e54a3af71f8c444c3bf933da44d057ac91c1d7",
+      "clear_unboxed_final_answer": "2.1",
+      "recorded_correct": false,
+      "response": "To solve this problem, we will use the given conversion factor:\n\n0.5 liters ≅ 1.05 pints\n\nWe want to find how many pints are in one liter. We can set up a proportion using the given conversion factor:\n\n\\( \\frac{0.5 \\text{ liters}}{1.05 \\text{ pints}} = \\frac{1 \\text{ liter}}{x \\text{ pints}} \\)\n\nNow, we need to solve for x, which represents the number of pints in one liter:\n\n\\( x = \\frac{1.05 \\text{ pints}}{0.5 \\text{ liters}} \\)\n\n\\( x = 2.1 \\text{ pints} \\)\n\nSo, there are approximately 2.1 pints in one liter when rounding to the nearest tenth."
+    },
+    {
+      "file_line": 14,
+      "response_1based": 2,
+      "id": "3952281fd344e23e858952a195e54a3af71f8c444c3bf933da44d057ac91c1d7",
+      "clear_unboxed_final_answer": "2.1",
+      "recorded_correct": false,
+      "response": "To find out how many pints are in one liter, we can set up a proportion using the given information:\n\n0.5 liters : 1.05 pints = 1 liter : x pints\n\nNow, we can cross-multiply and solve for x:\n\n0.5 * x = 1 * 1.05\n\nx = 1.05 / 0.5\n\nx = 2.1\n\nSo, there are approximately 2.1 pints in one liter."
+    },
+    {
+      "file_line": 14,
+      "response_1based": 8,
+      "id": "3952281fd344e23e858952a195e54a3af71f8c444c3bf933da44d057ac91c1d7",
+      "clear_unboxed_final_answer": "2.1",
+      "recorded_correct": false,
+      "response": "To find out how many pints are in one liter, we need to determine the ratio between one liter and 0.5 liters. Since 0.5 liters is equivalent to 1.05 pints, let's set up a proportion to find the number of pints in one liter.\n\n\\[0.5 \\text{ liters} = 1.05 \\text{ pints}\\]\n\nWe can write this proportion:\n\n\\[\\frac{1.05 \\text{ pints}}{0.5 \\text{ liters}} = \\frac{x \\text{ pints}}{1 \\text{ liter}}\\]\n\nwhere \\( x \\) represents the number of pints in one liter. To solve for \\( x \\), we can cross-multiply:\n\n\\[1.05 \\times 1 = 0.5 \\times x\\]\n\n\\[1.05 = 0.5x\\]\n\nNow, divide both sides by 0.5 to isolate \\( x \\):\n\n\\[x = \\frac{1.05}{0.5}\\]\n\n\\[x = 2.1\\]\n\nTherefore, there are 2.1 pints in one liter when rounded to the nearest tenth."
+    },
+    {
+      "file_line": 20,
+      "response_1based": 5,
+      "id": "76c463f8a29097edcb4705b56f57ad6c0d050ec4435b251bd73e56eb9c8e1b53",
+      "clear_unboxed_final_answer": "360",
+      "recorded_correct": false,
+      "response": "To solve this problem, we can use the following step-by-step approach:\n\n1. Calculate the total number of arrangements without any restrictions.\nThe total number of 6-digit integers with six distinct digits formed from the set $\\{1, 2, 3, 4, 5, 6\\}$ is $6! = 720$.\n\n2. Calculate the number of arrangements where digit 1 is to the right of digit 6.\nConsider digit 1 and digit 6 as two fixed positions. There are $\\frac{6!}{2}$ ways to arrange the other 4 digits, with each arrangement having an equal count of arrangements where 1 is to the left or right of 6. Therefore, we divide the total number of arrangements by 2:\n\n$\\frac{6!}{2} = \\frac{720}{2} = 360$.\n\n3. Subtract the number of restricted arrangements from the total.\nThis will give us the number of valid arrangements where digit 1 is to the left of digit 6:\n\nValid arrangements = Total arrangements - Restricted arrangements = $720 - 360 = 360$.\n\nSo, there are 360 such integers in which digit 1 is to the left of digit 6."
+    },
+    {
+      "file_line": 31,
+      "response_1based": 6,
+      "id": "5859274ca45c40b144c94c6b17d25aebb1b25ae4c914ed3189ac3a3875b5b199",
+      "clear_unboxed_final_answer": "48",
+      "recorded_correct": false,
+      "response": "To find the value of $x^2 + 4y^2$, we can start by squaring the first equation: $(x + 2y)^2 = 16$.\n\nExpanding this gives us: $x^2 + 4xy + 4y^2 = 16$.\n\nWe can factor out the xy term using the given equation $xy = -8$:\n\n$x^2 + 4(-8) + 4y^2 = 16$.\n\nSimplifying, we have:\n\n$x^2 - 32 + 4y^2 = 16$.\n\nAdd 32 to both sides:\n\n$x^2 + 4y^2 = 48$.\n\nSo the value of $x^2 + 4y^2$ is 48."
+    },
+    {
+      "file_line": 40,
+      "response_1based": 3,
+      "id": "622679c343d767b04bce430a43e77e53792ade631859d0a4950f785e98ca456d",
+      "clear_unboxed_final_answer": "1",
+      "recorded_correct": false,
+      "response": "I'll solve this step-by-step. We have two lines described as follows:\n\n1. Line 1: $y = x + d$\nThis can be rewritten as $y - x = d$.\n\n2. Line 2: $x = -y + d$\nThis can be rewritten as $x + y = d$.\n\nWe're told these two lines intersect at the point $(d-1, d)$. This means the coordinates $(d-1, d)$ should satisfy the equations for both lines when substituted.\n\nFor Line 1:\n$d-1 - (d) = d$\n$-1 = d$. So, $d = -1$.\n\nFor Line 2:\n$(d-1) + d = d$\n$2d - 1 = d$\n$2d - d = 1$\n$d = 1$. \n\nNow, we need to check which of our values for $d$ (both $-1$ and $1$) truly satisfies both lines for the intersection point. \n\nIf we substitute $d = -1$, the intersection point is $(-2, -1)$. Let's verify that this point satisfies both lines.\n\nLine 1: $y = x - 1$, substituting $x = -2$ and $y = -1$, we get $-1 = -2 - 1$, which is $-1 = -3$ which is not true, so $d = -1$ does not satisfy Line 1, hence $d \\neq -1$.\n\nIf we substitute $d = 1$, the intersection point is $(0, 1)$. Let's verify that this point satisfies both lines.\n\nLine 1: $y = x + 1$, substituting $x = 0$ and $y = 1$, we get $1 = 0 + 1$, which is $1 = 1$, true! So yes, $d = 1$ satisfies Line 1.\n\nThus, only $d = 1$ satisfies the condition for the intersection point. Therefore, the value of $d$ is $1$.\n\nI hope that answers your question!"
+    }
+  ],
+  "additional_format_issue": {
+    "file_line": 34,
+    "response_1based": 5,
+    "gold": "30",
+    "boxed_answer": "30 °",
+    "recorded_correct": false,
+    "note": "Degree notation needs context-aware normalization; this particular reasoning trace is also unsound."
+  },
+  "scope": "No source dataset, model outputs, or grading code modified. Source issues are examples, not an exhaustive gold audit."
+}

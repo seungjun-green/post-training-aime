@@ -1,0 +1,33 @@
+{
+  "quality": {
+    "input_rows": 50,
+    "eligible_rows": 32,
+    "quarantined_rows": 18,
+    "corrected_rows": 2,
+    "reasons": {
+      "nonunique_answer": 2,
+      "unreviewed_source_subset": 12,
+      "incomplete_reference": 1,
+      "corrupted_or_inconsistent_question": 1,
+      "inconsistent_geometry": 1,
+      "incorrect_gold": 2,
+      "ambiguous_notation": 1
+    },
+    "policy_version": "smoke-reviewed-v2",
+    "quarantined_sub_sources": {
+      "synthetic_math": 16,
+      "aops_forum": 1,
+      "inequalities": 1
+    },
+    "limitation": "Rule-based screening and reviewed corrections; not an exhaustive semantic gold audit."
+  },
+  "retained_responses": 256,
+  "old_correct_on_retained_rows": 46,
+  "regraded_correct_on_retained_rows": 48,
+  "input_sha256": "634fc7f4e959e60dceedea90817a6e67ca34df621ad732ef7049495777829509",
+  "new_generation": false,
+  "grading_policy_version": "explicit-final-v2",
+  "grading_error_count": 0,
+  "changed_correct_flags": 4,
+  "note": "Diagnostic regrading only; excluded rows reduce the sample below 50. Fresh GPU smoke uses 50 eligible rows."
+}

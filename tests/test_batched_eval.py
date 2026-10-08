@@ -305,3 +305,23 @@ def test_cli_records_execution_exports_and_resumes_without_changing_baseline(tmp
     execution_path.write_text(yaml.safe_dump(execution))
     with pytest.raises(ValueError, match="identity/source changed"):
         runner.main()
+
+
+def test_explicit_stop_tokens_reach_vllm_with_eos_enabled(monkeypatch):
+    engine, _, _, execution = fixture()
+    engine.config['stop_token_ids'] = [151643, 151645]
+    core = install_core(monkeypatch, engine)
+    list(generate_problems(engine, [{'key': 0, 'problem': 'Compute 1+1', 'n': 8, 'seed': 42}], execution))
+    params = core.calls[0][2]
+    assert params.stop_token_ids == [151643, 151645]
+    assert params.ignore_eos is False
+
+
+def test_sampling_stop_diagnostics_are_recorded_when_requested(monkeypatch):
+    engine, _, _, execution = fixture()
+    engine.config['record_stop_diagnostics'] = True
+    install_core(monkeypatch, engine)
+    result = list(generate_problems(engine, [{'key': 0, 'problem': 'Compute 1+1', 'n': 8, 'seed': 42}], execution))
+    for response in result[0][2]:
+        assert response['stop_reason'] is None
+        assert response['last_token_id'] == 3

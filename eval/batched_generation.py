@@ -43,6 +43,8 @@ def generate_problems(engine, jobs, execution):
                     n=job["n"], temperature=engine.config["temperature"],
                     top_p=engine.config["top_p"], max_tokens=engine.config["max_new_tokens"],
                     seed=job["seed"], output_kind=RequestOutputKind.FINAL_ONLY,
+                    **({"stop_token_ids": engine.config["stop_token_ids"], "ignore_eos": False}
+                       if "stop_token_ids" in engine.config else {}),
                 )
                 request_id = f"eval-{counter}"
                 counter += 1
@@ -59,7 +61,10 @@ def generate_problems(engine, jobs, execution):
                     raise ValueError("vLLM returned missing or duplicate sample indices")
                 yield job, prompt, [
                     {"text": o.text, "token_count": len(o.token_ids),
-                     "finish_reason": o.finish_reason}
+                     "finish_reason": o.finish_reason,
+                     **({"stop_reason": getattr(o, "stop_reason", None),
+                         "last_token_id": o.token_ids[-1] if o.token_ids else None}
+                        if engine.config.get("record_stop_diagnostics") else {})}
                     for o in outputs
                 ]
             now = time.monotonic()

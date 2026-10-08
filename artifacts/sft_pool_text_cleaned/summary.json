@@ -1,0 +1,60 @@
+{
+  "policy_version": "text-only-exclusions-v1",
+  "input_path": "/Users/seungjunlee/Downloads/train-00000-of-00001 (2).parquet",
+  "input_sha256": "b89b0bdd0c2eb2e231683e3f7bbfa18b260c5f4d8e2f33b7d3f984e0b03d9f3f",
+  "input_rows": 28905,
+  "retained_rows": 27167,
+  "removed_unique_rows": 1738,
+  "per_rule_counts": {
+    "visual_reference": 1382,
+    "chinese_characters": 160,
+    "translation_instruction": 226
+  },
+  "overlap_combinations": {
+    "visual_reference": 1353,
+    "chinese_characters": 146,
+    "translation_instruction": 209,
+    "translation_instruction + visual_reference": 16,
+    "chinese_characters + visual_reference": 13,
+    "translation_instruction + chinese_characters": 1
+  },
+  "per_rule_sub_sources": {
+    "translation_instruction": {
+      "cn_contest": 72,
+      "olympiads": 130,
+      "inequalities": 14,
+      "number_theory": 8,
+      "olympiads_ref": 2
+    },
+    "chinese_characters": {
+      "olympiads": 106,
+      "olympiads_ref": 3,
+      "cn_contest": 40,
+      "inequalities": 8,
+      "number_theory": 3
+    },
+    "visual_reference": {
+      "olympiads": 466,
+      "synthetic_math": 276,
+      "intermediate_algebra": 10,
+      "aops_forum": 103,
+      "cn_contest": 314,
+      "geometry": 103,
+      "prealgebra": 63,
+      "inequalities": 8,
+      "precalculus": 8,
+      "counting_and_probability": 14,
+      "qq8933/AIME_1983_2024": 1,
+      "algebra": 12,
+      "olympiads_ref": 3,
+      "KbsdJames/Omni-MATH": 1
+    }
+  },
+  "scope": "Only the three requested text exclusions. All retained fields, gold answers, order, and Arrow schema are unchanged.",
+  "visual_policy": "Conservative text-only eligibility: explicit visual-reference phrases and image/diagram markup (including unrendered Asymptote) are excluded. This does not prove that every flagged item requires an image; generic mathematical uses of figure and shown are not sufficient.",
+  "outputs": {
+    "cleaned": "/Users/seungjunlee/Documents/ChatGPT/lg-korean-aime/artifacts/sft_pool_text_cleaned/train-cleaned.parquet",
+    "excluded": "/Users/seungjunlee/Documents/ChatGPT/lg-korean-aime/artifacts/sft_pool_text_cleaned/excluded.parquet"
+  },
+  "validation": "Passed lossless partition, output round-trip, schema, and remaining-rule-match checks."
+}

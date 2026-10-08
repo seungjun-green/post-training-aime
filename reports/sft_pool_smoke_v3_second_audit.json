@@ -1,0 +1,177 @@
+{
+  "input_path": "/Users/seungjunlee/Downloads/smoke_results (1).jsonl",
+  "input_sha256": "634fc7f4e959e60dceedea90817a6e67ca34df621ad732ef7049495777829509",
+  "recommendation": "Hold the full run. Repair equation and radix grading, handle form-sensitive tasks, and review source quality beyond individually patched rows. Repeat the smoke test after repair.",
+  "metrics": {
+    "rows": 50,
+    "responses": 400,
+    "correct_responses": 89,
+    "accuracy_recorded": 0.2225,
+    "rows_with_any_correct": 25,
+    "num_correct_histogram": {
+      "3": 4,
+      "4": 4,
+      "1": 8,
+      "0": 25,
+      "7": 3,
+      "5": 2,
+      "6": 2,
+      "8": 1,
+      "2": 1
+    },
+    "finish_reasons": {
+      "stop": 395,
+      "length": 5
+    },
+    "empty_extractions": 82,
+    "empty_extractions_with_stop": 79,
+    "token_mean": 738.14,
+    "token_median": 570.0,
+    "token_max": 8192,
+    "token_total": 295256,
+    "sub_sources": {
+      "prealgebra": 1,
+      "synthetic_math": 17,
+      "olympiads": 17,
+      "aops_forum": 5,
+      "cn_contest": 3,
+      "number_theory": 1,
+      "geometry": 2,
+      "algebra": 1,
+      "inequalities": 2,
+      "counting_and_probability": 1
+    }
+  },
+  "validation": {
+    "all_annotation_vectors_valid": true,
+    "all_num_correct_consistent": true,
+    "regrading_mismatches": 0,
+    "regrading_note": "All 400 responses reproduced current score_final outputs during audit. This consistency check does not establish semantic correctness.",
+    "token_note": "Counts are recorded values; generated token IDs are unavailable.",
+    "stop_note": "Stop/length labels alone cannot identify the exact Qwen token that ended generation."
+  },
+  "comparison": {
+    "previous_input": "/Users/seungjunlee/Downloads/smoke_results.jsonl",
+    "overlapping_ids": 0,
+    "note": "Different questions; accuracy and extraction-rate differences are not controlled estimates of improvement."
+  },
+  "grader_issues": [
+    {
+      "file_line": 7,
+      "response_number": 1,
+      "id": "423503bfa863b11a26d49b63d17d5731d9dbf4e9da7f1a66d6ddd5041975380c",
+      "kind": "equation_false_negative",
+      "evidence": "The final equation 42x^2-46x+12=0 is equivalent to the gold 21y^2-23y+6=0. clean_math discards the entire left side and extracts only 0.",
+      "stored_extraction": "0",
+      "stored_correct": false,
+      "recommended_action": "Preserve complete equations and compare solution-equivalent equations with controlled variable renaming."
+    },
+    {
+      "file_line": 9,
+      "response_number": 5,
+      "id": "10fbd70c585c37c4f33e20115f745efe22be155f9224bc64d7750a1e2f56e9b8",
+      "kind": "factorization_false_positive",
+      "evidence": "The response returns the original unfactored polynomial and says it may not factor further. Symbolic equivalence nevertheless awards correctness.",
+      "stored_extraction": "x^7 + 2x^5 + x + 2",
+      "stored_correct": true,
+      "recommended_action": "Require task-appropriate factored form, or quarantine form-sensitive questions from generic expression verification."
+    },
+    {
+      "file_line": 10,
+      "response_number": 8,
+      "id": "6060aa1984ea35d56eff05deceed094c47a0e77a36300f393709808b19200bed",
+      "kind": "radix_notation_false_negative",
+      "evidence": "The response correctly gives 10010_2, but the reference (10010)_{2} fails comparison. Both denote binary 18.",
+      "stored_extraction": "10010_2",
+      "stored_correct": false,
+      "recommended_action": "Normalize explicit base notation without confusing ordinary subscripts with radices."
+    }
+  ],
+  "source_issues": [
+    {
+      "file_line": 2,
+      "id": "2ac743ea970410c639b25c1f783fe784d5fe757999d1f4e28d70d99b2897717c",
+      "sub_source": "synthetic_math",
+      "kind": "nonunique_answer",
+      "problem": "A non-square rectangle has integer dimensions. The number of square units in its area is numerically twice the number of units in its perimeter. What is the number of units in the perimeter of this rectangle?",
+      "stored_gold": "36",
+      "evidence": "Integer nonsquare rectangles (6,12) and (5,20) both satisfy area = twice perimeter, but have perimeters 36 and 50.",
+      "recommended_action": "Quarantine unless a missing constraint is recovered."
+    },
+    {
+      "file_line": 15,
+      "id": "f4733fdb72010fa7f020013d13d6f7802feb536a667433a310bcc9df0889ccb7",
+      "sub_source": "synthetic_math",
+      "kind": "nonunique_answer",
+      "problem": "The equation $a^8xy - a^7y - a^6x = a^5(b^5 - 1)$ is equivalent to the equation $(a^mx - a^n)(a^py - a^q) = a^5b^5$ for some integers $m$, $n$, $p$, and $q$. Find the product $mnpq$.",
+      "stored_gold": "2",
+      "evidence": "Expansion requires m+p=8, n+p=7, m+q=6, n+q=5. Both (m,n,p,q)=(2,1,6,4) and (3,2,5,3) work, with products 48 and 90.",
+      "recommended_action": "Quarantine; the requested product is not uniquely determined."
+    },
+    {
+      "file_line": 22,
+      "id": "10e979ede35229b272a51586cc9c43b59bf242138c57f87ee2dfe49e7d591580",
+      "sub_source": "aops_forum",
+      "kind": "incomplete_reference",
+      "problem": "The sequence $ (x_n)_{n \\in \\mathbb{N}}$ is defined by $ x_1\\equal{}2, x_2\\equal{}3,$ and\r\n\r\n$ x_{2m\\plus{}1}\\equal{}x_{2m}\\plus{}x_{2m\\minus{}1}$ for $ m \\ge 1;$\r\n$ x_{2m}\\equal{}x_{2m\\minus{}1}\\plus{}2x_{2m\\minus{}2}$ for $ m \\ge 2.$\r\n\r\nDetermine $ x_n$ as a function of $ n$.",
+      "stored_gold": "x_{2m+1} = 4x_{2m-1} - 2x_{2m-3}",
+      "evidence": "The reference is another recurrence for odd indices, rather than x_n explicitly as a function of n.",
+      "recommended_action": "Review and replace reference before automatic grading."
+    },
+    {
+      "file_line": 34,
+      "id": "c3aa0fb6693e2654bc6361272e00f3d8cdbc63be9aa1e98f95d1551cd9900594",
+      "sub_source": "inequalities",
+      "kind": "corrupted_or_inconsistent_question",
+      "problem": "2. $50 N$ is an integer, its base $b$ representation is 777, find the smallest positive integer $b$, such that $N$ is an integer to the fourth power.",
+      "stored_gold": "18",
+      "evidence": "As written, 50N is even for integer N, but 777 in any integer base b is 7(b^2+b+1), which is odd.",
+      "recommended_action": "Quarantine; do not silently reinterpret 50N as N."
+    },
+    {
+      "file_line": 38,
+      "id": "cfab84a4cd00d462a7dd0674cc25bc3765ecc56dc4adb04c592abb9ea07d0188",
+      "sub_source": "synthetic_math",
+      "kind": "inconsistent_geometry",
+      "problem": "The vertices of an equilateral triangle lie on the ellipse given by the equation $\\frac{x^2}{4} + \\frac{y^2}{9} = 1$, and the centroid of the triangle is at the origin (0,0), which is also the center of the ellipse. Calculate the square of the area of the triangle.",
+      "stored_gold": "\\frac{507}{16}",
+      "evidence": "An equilateral triangle with centroid at the origin has vertices R(cos(theta+2*pi*k/3),sin(theta+2*pi*k/3)). Requiring all three on this noncircular centered ellipse would require the three cos(2*theta+4*pi*k/3) values to be equal. Their sum is zero, so all must be zero, which is impossible.",
+      "recommended_action": "Quarantine unless the original geometric conditions can be recovered."
+    },
+    {
+      "file_line": 45,
+      "id": "56a1e97dbdd8bf21a7a022e201bdc26f9c5f48c76d7a1331a505fa633ca8f007",
+      "sub_source": "synthetic_math",
+      "kind": "incorrect_gold",
+      "problem": "In a regular hexagon $ABCDEF$, points $P$ and $Q$ are the midpoints of sides $\\overline{AB}$ and $\\overline{DE}$ respectively. Compute $[APB]/[CQPD]$.",
+      "stored_gold": "\\frac{1}{2}",
+      "evidence": "P is on AB, so triangle APB has area zero. CQPD is nondegenerate. The requested ratio is 0, not 1/2.",
+      "recommended_action": "Review source; correct gold to 0 if the question is intentional, otherwise quarantine."
+    },
+    {
+      "file_line": 46,
+      "id": "d91051d22554bfd1ead1872d00c3128a530d8f3f081da49483bee18210d1627c",
+      "sub_source": "aops_forum",
+      "kind": "incorrect_gold",
+      "problem": "Given a circle of radius $r$ and a tangent line $\\ell$ to the circle through a given point $P$ on the circle.  From a variable point $R$ on the circle, a perpendicular $RQ$ is drawn to $\\ell$ with $Q$ on $\\ell$.  Determine the maximum of the area of triangle $PQR$.",
+      "stored_gold": "\\frac{r^2 \\sqrt{3}}{8}",
+      "evidence": "With P=(0,0), center=(0,r), R=(r*sin(theta),r*(1-cos(theta))), area is r^2*abs(sin(theta))*(1-cos(theta))/2. Its maximum occurs at cos(theta)=-1/2 and equals 3*sqrt(3)*r^2/8.",
+      "recommended_action": "Correct reference after source review, then regrade."
+    },
+    {
+      "file_line": 50,
+      "id": "c7ca722529dec61222ecce78ec1d89e6f08799f4eda9a25aa0c5b4ab72e38dac",
+      "sub_source": "synthetic_math",
+      "kind": "ambiguous_notation",
+      "problem": "Given a huge number $y = 2^53^64^75^86^97^108^119^{12}$, what is the smallest positive integer that, when multiplied with $y$, makes $y$ a perfect square?",
+      "stored_gold": "3",
+      "evidence": "The concatenated exponent string lacks multiplication signs or grouping sufficient to identify the intended integer unambiguously.",
+      "recommended_action": "Quarantine rather than guess the intended product."
+    }
+  ],
+  "additional_observations": [
+    "Fallback extraction sometimes accepts nonmathematical Unicode or punctuation strings. These are graded false, but a nonempty extraction does not guarantee a usable final answer.",
+    "All 50 quality_action fields are unchanged. The existing screening rules missed these new semantic source issues.",
+    "This is a targeted manual audit, not a complete gold-standard adjudication of all 400 responses."
+  ]
+}

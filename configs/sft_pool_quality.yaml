@@ -1,0 +1,134 @@
+version: smoke-reviewed-v2
+reviewed_rows:
+  1be5f4a7b2e8232853dd5589ebe9364b4c63aa797a5d980f12be621ef5e0d259:
+    problem_sha256: 5d077b437dda730b724616e0ae7aa8efb2df0c261859d3a1a5fdd60a20e6cffa
+    expected_gold: 2\sqrt{6}
+    action: correct
+    reason: incorrect_gold
+    evidence: Let t=x^2+7>=7. f(t)=sqrt(t)+6/sqrt(t), derivative=(t-6)/(2*t^(3/2))>0;
+      minimum is 13/sqrt(7) at x=0, not 2*sqrt(6).
+    corrected_gold: \frac{13}{\sqrt{7}}
+  8eca532d71b9ce3cddb7aed0e37ed96b94691424e72e34912d7273593c115861:
+    problem_sha256: 06af8adee8076d5fa9a45acb550c7d76f81598fe403d9ee267cd943b408166d0
+    expected_gold: (-1)^{n}+(-1)^{n}(-1)
+    action: correct
+    reason: incorrect_gold
+    evidence: Stored gold (-1)^n+(-1)^n*(-1) is identically zero. Cycle coloring count
+      is (m-1)^n+(-1)^n*(m-1); for m=3,n=3 it is 6. Response 1 supplies that general
+      formula.
+    corrected_gold: (m-1)^n+(-1)^n(m-1)
+  3f145748697fcc6a8661897deb89dd2c3187395ab03da2569c484ba9ad169a02:
+    problem_sha256: 661e09a0dbf60a519b704409dbb8068e1f613de5908b1f4e36a61d908f1ada0c
+    expected_gold: '25003400'
+    action: quarantine
+    reason: multipart_and_corrupt_gold
+    evidence: The problem asks two prices. The equations p_trainer=p_sneakers+900
+      and .9*p_sneakers+.95*p_trainer=5480 give 2500 and 3400; stored 25003400 concatenates
+      these answers.
+  3978b925aea04ab787fbd253428bc93be0856696ec5829f94f193400a0939b38:
+    problem_sha256: 43fafdf7b477dccd79af62a0914068f765527a9febd09bfdbc7f82fb886fa59d
+    expected_gold: '1090'
+    action: correct
+    reason: incorrect_gold
+    evidence: 'Exact integer arithmetic: sum(comb(2024,k), k=0..64) modulo 2027 =
+      1089, not 1090.'
+    corrected_gold: '1089'
+  9b6b12a966b9eda49ec2b8748294ca8bcc83423543b8745081ce32ca66d2eab6:
+    problem_sha256: daedc8528d2435c48adde39b80df61cda6271f19412a26ac53a2431130a170f8
+    expected_gold: (-2)[(-2)^{n-1}+(-1)^{n}]
+    action: correct
+    reason: incorrect_gold
+    evidence: Gold omits m and yields -6 for n=3. A triangular pyramid with m=4 colors
+      is K4 and has 4!=24 colorings.
+    corrected_gold: m((m-2)^n+(-1)^n(m-2))
+  a72da61138d068a9bccf77152430d9b5b98c76536962354eb1baaf5c40b5524f:
+    problem_sha256: c0b910a02d392300258badee50af67d378fe234778df662783171dc232fbcbab
+    expected_gold: '1'
+    action: quarantine
+    reason: nonunique_answer_and_incorrect_gold
+    evidence: 4BB26=40026+1100*B. Both B=0 and B=7 are divisible by 7; B=1 is not.
+  cc8a2031288b17cc4cfbe5e43f16e2480f205ea1133410983e58a1dfa4b173ed:
+    problem_sha256: a7849844b33e7572ad93a949587768edd04374081ead6b82a0e38f25d476cc7d
+    expected_gold: '24'
+    action: quarantine
+    reason: missing_visual_input
+    evidence: Question references a diagram only supplied as an external image URL.
+      No dimensions are in the text and this is a text-only model.
+  b81e11f8605e6a6671409a75929f5af0fa27040ea899ddba10f00c3dee4af660:
+    problem_sha256: 532b9ca5e198a1400c33e6c9546d74a31beb2aa20bcd00d7d991f615b1c52e83
+    expected_gold: \frac{3-2 \sqrt{21}}{3} < k < \frac{3+2 \sqrt{21}}{3}
+    action: quarantine
+    reason: malformed_question
+    evidence: Text contains "and $00$" and then a solution-like "Since ..." fragment;
+      original condition/question appears corrupted.
+  2407c1599a248b1ff3b8a66b1154d06a01b5d648472b2637226d885a46fe4612:
+    problem_sha256: e5ff8c8df04b45657558a8c9ca7e6fac94c4a39cdcb6d9db7592b1d6187e1f0f
+    expected_gold: '0.5'
+    action: quarantine
+    reason: ambiguous_gold
+    evidence: 1348*(0.04/100)=0.5392, while gold is 0.5. This may reflect a rounding
+      convention absent from the text.
+  2ac743ea970410c639b25c1f783fe784d5fe757999d1f4e28d70d99b2897717c:
+    problem_sha256: 8e877a72ec14a7ece5e4d3ed6787ca92ca52dd49f5c0ca84ec502b897277f977
+    expected_gold: '36'
+    action: quarantine
+    reason: nonunique_answer
+    evidence: Integer nonsquare rectangles (6,12) and (5,20) both satisfy area = twice
+      perimeter, but have perimeters 36 and 50.
+  f4733fdb72010fa7f020013d13d6f7802feb536a667433a310bcc9df0889ccb7:
+    problem_sha256: 171b514c40f58f83adbbd44c307f3e2be5e8e6dbc7862b685da771bd88306bdd
+    expected_gold: '2'
+    action: quarantine
+    reason: nonunique_answer
+    evidence: Expansion requires m+p=8, n+p=7, m+q=6, n+q=5. Both (m,n,p,q)=(2,1,6,4)
+      and (3,2,5,3) work, with products 48 and 90.
+  10e979ede35229b272a51586cc9c43b59bf242138c57f87ee2dfe49e7d591580:
+    problem_sha256: 0845858b5461369c30be36b95029ff24e7939cf8a9dd8b61dd1af724e579c63b
+    expected_gold: x_{2m+1} = 4x_{2m-1} - 2x_{2m-3}
+    action: quarantine
+    reason: incomplete_reference
+    evidence: The reference is another recurrence for odd indices, rather than x_n
+      explicitly as a function of n.
+  c3aa0fb6693e2654bc6361272e00f3d8cdbc63be9aa1e98f95d1551cd9900594:
+    problem_sha256: c1baa33b0144657e0d5fda783a1822ba76b87758832dcb2437b1ac1295c393b6
+    expected_gold: '18'
+    action: quarantine
+    reason: corrupted_or_inconsistent_question
+    evidence: As written, 50N is even for integer N, but 777 in any integer base b
+      is 7(b^2+b+1), which is odd.
+  cfab84a4cd00d462a7dd0674cc25bc3765ecc56dc4adb04c592abb9ea07d0188:
+    problem_sha256: 3521dec07edb65a9e1bedc77730688e80c96da2be00d2b481b36d3a3550ee50c
+    expected_gold: \frac{507}{16}
+    action: quarantine
+    reason: inconsistent_geometry
+    evidence: An equilateral triangle with centroid at the origin has vertices R(cos(theta+2*pi*k/3),sin(theta+2*pi*k/3)).
+      Requiring all three on this noncircular centered ellipse would require the three
+      cos(2*theta+4*pi*k/3) values to be equal. Their sum is zero, so all must be
+      zero, which is impossible.
+  56a1e97dbdd8bf21a7a022e201bdc26f9c5f48c76d7a1331a505fa633ca8f007:
+    problem_sha256: 064bfa252dab8cd5927780ea01a0164efb67a72516eb594561dfbb89c6d301b3
+    expected_gold: \frac{1}{2}
+    action: correct
+    reason: incorrect_gold
+    evidence: P is on AB, so triangle APB has area zero. CQPD is nondegenerate. The
+      requested ratio is 0, not 1/2.
+    corrected_gold: '0'
+  d91051d22554bfd1ead1872d00c3128a530d8f3f081da49483bee18210d1627c:
+    problem_sha256: be26942c310f4260d5e1145e4bf1272f34d156275e3a9dd76ec43591deed7e0f
+    expected_gold: \frac{r^2 \sqrt{3}}{8}
+    action: correct
+    reason: incorrect_gold
+    evidence: With P=(0,0), center=(0,r), R=(r*sin(theta),r*(1-cos(theta))), area
+      is r^2*abs(sin(theta))*(1-cos(theta))/2. Its maximum occurs at cos(theta)=-1/2
+      and equals 3*sqrt(3)*r^2/8.
+    corrected_gold: \frac{3r^2\sqrt{3}}{8}
+  c7ca722529dec61222ecce78ec1d89e6f08799f4eda9a25aa0c5b4ab72e38dac:
+    problem_sha256: cb1f5fd86333fbc68a54584adbb3b07f4e589775c1e1769fe4621e4232e9f3c2
+    expected_gold: '3'
+    action: quarantine
+    reason: ambiguous_notation
+    evidence: The concatenated exponent string lacks multiplication signs or grouping
+      sufficient to identify the intended integer unambiguously.
+quarantine_unreviewed_sub_sources:
+- synthetic_math
+screen_reference_parseability: true

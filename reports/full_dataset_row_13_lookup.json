@@ -1,0 +1,19 @@
+{
+  "input_path": "/Users/seungjunlee/Downloads/train-00000-of-00001 (2).parquet",
+  "dataset_rows": 28905,
+  "matches": [
+    {
+      "zero_based_index": 4138,
+      "one_based_row": 4139,
+      "row": {
+        "id": "6156a28fefbf5b48a36c030cb390213cef9bcd83af956f5053aefd7eb4922e8d",
+        "problem": "Let $E$ (a natural number) have all digits as 1, the number of its digits is $2k$, and let $F$ have all digits as 2, the number of its digits is $k$. Calculate the square root of $E-F$.\n\n \n\nTranslate the above text into English, please retain the original text's line breaks and format, and output the translation result directly.",
+        "gold_answer": "3A",
+        "dataset_source": "numina",
+        "sub_source": "olympiads",
+        "domain": "Number Theory",
+        "answer_type": "expression/text"
+      }
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+data:
+  repo: Seungjun/clean-math-sft-pool-30k
+  revision: b7702a05c3bbb2d2c59fcc77e87cc630f40b605e
+  config: default
+  split: train
+  expected_rows: 28905
+  id_column: id
+  problem_column: problem
+  answer_column: gold_answer
+model:
+  repo: Qwen/Qwen2.5-3B
+  revision: 3aab1f1954e9cc14eb9509a215f9e5ca08227a9b
+sampling:
+  n: 8
+  seed: 42
+  temperature: 1.0
+  top_p: 1.0
+  max_new_tokens: 8192
+  verify_timeout_seconds: 5
+engine:
+  max_model_len: 32768
+  max_num_seqs: 16
+  max_num_batched_tokens: 8192
+  gpu_memory_utilization: 0.90
+  dtype: auto
+execution:
+  max_pending_problems: 4
+  status_interval_seconds: 30
+smoke:
+  rows: 50
+  seed: 42
+export:
+  shard_rows: 500
+target:
+  repo: Seungjun/clean-math-sft-pool-30k

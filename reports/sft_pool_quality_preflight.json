@@ -1,0 +1,21 @@
+{
+  "input_rows": 28905,
+  "eligible_rows": 27774,
+  "quarantined_rows": 1131,
+  "corrected_rows": 4,
+  "reasons": {
+    "diagram_requires_review": 821,
+    "malformed_or_solution_fragment": 11,
+    "image_reference": 174,
+    "multipart_requires_review": 98,
+    "multiple_required_values": 22,
+    "malformed_question": 1,
+    "missing_visual_input": 1,
+    "incorrect_gold": 4,
+    "ambiguous_gold": 1,
+    "multipart_and_corrupt_gold": 1,
+    "nonunique_answer_and_incorrect_gold": 1
+  },
+  "policy_version": "smoke-reviewed-v1",
+  "limitation": "Rule-based screening and reviewed corrections; not an exhaustive semantic gold audit."
+}
