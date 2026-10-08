@@ -1,11 +1,16 @@
 """Build the self-contained full-run Colab with the current sampling/grading bundle."""
-from build_notebooks import code, markdown, write_notebook
+from build_notebooks import ROOT, code, markdown, payload, write_notebook
+from build_sft_pool_sampling_notebook import FILES
 from build_sft_pool_sampling_notebook import cells as sampling_cells
 
 
 def cells():
     # Share the exact dependency installation and embedded code with the smoke notebook.
     install = sampling_cells()[3]
+    install.source = install.source.replace(
+        payload([ROOT / p for p in FILES]),
+        payload([ROOT / p for p in FILES + ['common/pool_progress.py']]))
+    install.source += '\nfrom common.pool_progress import run_pool_logged as run_logged'
     return [
         markdown('''
         # Qwen2.5-3B 전체 실행 — 문제당 8개 생성 · 채점 · HF 업로드
@@ -72,7 +77,9 @@ def cells():
         manifest = json.loads((RUN_DIR / 'manifest.json').read_text())
         print('고정된 HF 버전:', manifest['dataset_revision'])
         print('HF 입력 행 수:', manifest['source_rows'])
-        print('품질 검사 결과:', (RUN_DIR / 'quality_summary.json').read_text())
+        quality = json.loads((RUN_DIR / 'quality_summary.json').read_text())
+        print(f"Eligible problems: {quality['eligible_rows']:,} / {quality['input_rows']:,}")
+        print('Quality report:', RUN_DIR / 'quality_summary.json')
         print('저장 위치:', RUN_DIR)
         '''),
         markdown('''
@@ -81,13 +88,16 @@ def cells():
         문제당 8개, temperature=1.0, top-p=1.0, 답변당 최대 8,192토큰입니다.
         Qwen의 `<|endoftext|>`(151643), `<|im_end|>`(151645)에서 생성을 멈춥니다.
         토큰 한도에 도달하면 `finish_reasons`에 `length`가 기록됩니다.
-        전체 생성에는 오랜 시간이 걸릴 수 있습니다. 진행 상황은 아래 로그에 표시됩니다.
+        전체 생성에는 오랜 시간이 걸릴 수 있습니다. 진행 상황은 하나의 갱신되는 상태 패널에 표시됩니다. 전체 로그는 full_console.log에 보존됩니다.
         '''),
         code('''
         run_logged(COMMAND + ['--mode', 'full'], cwd=CODE_ROOT,
                    log_path=RUN_DIR / 'full_console.log')
         summary = json.loads((RUN_DIR / 'full/summary.json').read_text())
-        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        print(f"Completed: {summary['rows']:,} problems / {summary['responses']:,} responses")
+        print(f"Response accuracy: {summary['accuracy_per_response']:.2%} | At least one correct: {summary['at_least_one_correct_fraction']:.2%}")
+        print(f"Truncated: {summary['truncated_fraction']:.2%} | Grading exceptions: {summary['grading_exceptions']:,}")
+        print('Full summary:', RUN_DIR / 'full/summary.json')
         print('전체 결과 Parquet:', RUN_DIR / 'full/data')
         print('채점 상세 기록:', RUN_DIR / 'full/grading_audit.jsonl')
         '''),
