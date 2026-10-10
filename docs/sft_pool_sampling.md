@@ -1,5 +1,45 @@
 # Eight base-model responses per eligible SFT pool problem (cleaned-source update)
 
+## Math-7B-Instruct follow-up on the 3B 0/1/2 subset
+
+For the four-RTX-PRO-6000 Runpod Pod, use
+`notebooks/sample_sft_pool_math7b_8_runpod_4gpu.ipynb` in JupyterLab. It installs a
+separate pinned runtime under `/workspace`, checks BF16 computation on all four
+GPUs, and uses an environment `HF_TOKEN` or hidden token prompt. Each GPU loads
+one model and receives every fourth entry in the selected 0/1/2 list. Defaults
+are 64 active responses and 16 pending problems per GPU. Journals and progress
+are separate per worker; merge verifies complete, disjoint assignments before
+the existing full export/upload checks. Empty worker partitions are supported.
+All source rows and 3B fields remain intact, with null 7B fields for scores 3–8.
+Use the new Runpod RUN_NAME; its batching and four-worker protocol differ from
+the Colab run. Keep the Pod/kernel running and use persistent `/workspace`
+storage (a network volume if results must survive deleting the Pod).
+
+Use `notebooks/sample_sft_pool_math7b_8.ipynb` in GPU Colab (A100 recommended), with
+a write-capable `HF_TOKEN` in Secrets. Run all to select rows whose existing
+`num_correct` is 0, 1, or 2, generate eight responses with
+`Qwen/Qwen2.5-Math-7B-Instruct`, grade with the current Math-Verify policy, and
+update the same HF dataset. This stage performs no additional source cleaning.
+All source rows and 3B fields are preserved. It adds `7B_responses`,
+`7B_extracted_answers`, `7B_correct`, `7B_response_tokens`, `7B_finish_reasons`, and
+`7B_num_correct`; all six are null on unselected rows (not evaluated).
+
+The model is pinned to `ef9926d75ab1d54532f6a30dd5e760355eb9aa4d` and uses its official
+CoT system prompt with the native instruct template. EOS is `<|im_end|>` (151645),
+with `<|endoftext|>` (151643) also recognized. Temperature/top-p default to 1.0/1.0.
+Native context is 4096 tokens; each response gets at most 3072 tokens, reduced to
+the available space for a longer prompt. Prompts are never silently truncated.
+The exact per-row budget, stop diagnostics, and grading details are recorded.
+
+Drive stores `responses_7b.jsonl` checkpoints and sharded full Parquet output.
+Resume uses the same source commit, code, settings, model, and GPU/software runtime.
+Only a complete export with unchanged originals can be uploaded. A single guarded
+HF commit preserves existing files and changes the default train path to the new
+run-specific `annotated-7b/<signature>/data/*.parquet` directory. Uploads verify remote
+checksums and can recover an interrupted receipt step without publishing twice.
+
+## Original 3B workflow
+
 Open `notebooks/sample_clean_sft_pool_qwen3b_8.ipynb` in GPU Colab and enable
 `HF_TOKEN` in Colab Secrets. The notebook embeds all required project files.
 Use the new default `qwen25-3b-base-eight-cleaned-other-v1` run name; older journals must not mix

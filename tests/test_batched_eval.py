@@ -103,6 +103,25 @@ def test_continuous_queue_refills_preserves_sampling_and_sample_order(monkeypatc
         assert [r["token_count"] for r in responses] == list(range(1, job["n"] + 1))
 
 
+def test_custom_instruct_prompt_and_per_problem_budget(monkeypatch):
+    engine, _, _, execution = fixture()
+    core = install_core(monkeypatch, engine)
+    engine.config.update(max_model_len=8, max_new_tokens=7,
+                         stop_token_ids=[151645, 151643])
+    seen = []
+    def renderer(tokenizer, problem):
+        seen.append(problem)
+        return 'custom instruct prompt'
+    job = {'key': 0, 'problem': 'Question', 'n': 8, 'seed': 42, 'max_new_tokens': 6}
+    result = list(generate_problems(engine, [job], execution, prompt_renderer=renderer))
+    assert seen == ['Question'] and result[0][1] == 'custom instruct prompt'
+    assert core.calls[0][2].max_tokens == 6
+    assert core.calls[0][2].stop_token_ids == [151645, 151643]
+    assert core.calls[0][2].ignore_eos is False
+    with pytest.raises(ValueError, match='Invalid per-problem'):
+        list(generate_problems(engine, [{**job, 'max_new_tokens': 8}], execution))
+
+
 @pytest.mark.parametrize("bad_indices", [False, True])
 def test_generation_cancels_pending_on_interrupt_or_invalid_outputs(monkeypatch, bad_indices):
     engine, _, _, execution = fixture()

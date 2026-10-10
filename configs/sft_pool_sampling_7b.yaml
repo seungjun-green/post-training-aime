@@ -1,0 +1,23 @@
+data:
+  repo: Seungjun/clean-math-sft-pool-30k
+model:
+  repo: Qwen/Qwen2.5-Math-7B-Instruct
+  revision: ef9926d75ab1d54532f6a30dd5e760355eb9aa4d
+sampling:
+  n: 8
+  seed: 42
+  temperature: 1.0
+  top_p: 1.0
+  max_new_tokens: 3072
+  verify_timeout_seconds: 5
+engine:
+  max_model_len: 4096
+  max_num_seqs: 8
+  max_num_batched_tokens: 4096
+  gpu_memory_utilization: 0.90
+  dtype: auto
+execution:
+  max_pending_problems: 2
+  status_interval_seconds: 30
+export:
+  shard_rows: 128

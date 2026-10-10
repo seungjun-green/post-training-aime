@@ -6,7 +6,7 @@ from common.english_prompts import render_prompt
 from eval.engines import check_context
 
 
-def generate_problems(engine, jobs, execution):
+def generate_problems(engine, jobs, execution, *, prompt_renderer=render_prompt):
     """Yield (job, prompt, responses) as whole problems finish, possibly out of order.
 
     jobs carry key/problem/n/seed. Native n-way sampling preserves vLLM's child
@@ -36,12 +36,15 @@ def generate_problems(engine, jobs, execution):
                 if job is None:
                     exhausted = True
                     break
-                prompt = render_prompt(engine.tokenizer, job["problem"])
+                prompt = prompt_renderer(engine.tokenizer, job["problem"])
                 ids = engine.tokenizer.encode(prompt, add_special_tokens=False)
-                check_context(ids, engine.config)
+                max_tokens = job.get("max_new_tokens", engine.config["max_new_tokens"])
+                if not 0 < max_tokens <= engine.config["max_new_tokens"]:
+                    raise ValueError("Invalid per-problem generation budget")
+                check_context(ids, {**engine.config, "max_new_tokens": max_tokens})
                 params = SamplingParams(
                     n=job["n"], temperature=engine.config["temperature"],
-                    top_p=engine.config["top_p"], max_tokens=engine.config["max_new_tokens"],
+                    top_p=engine.config["top_p"], max_tokens=max_tokens,
                     seed=job["seed"], output_kind=RequestOutputKind.FINAL_ONLY,
                     **({"stop_token_ids": engine.config["stop_token_ids"], "ignore_eos": False}
                        if "stop_token_ids" in engine.config else {}),

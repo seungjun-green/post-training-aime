@@ -126,7 +126,7 @@ def merge(ds, cfg, manifest, run_dir, workers):
         return result
 
 
-def launch(cfg_path, root, run_dir, gpu_ids):
+def launch(cfg_path, root, run_dir, gpu_ids, *, module='pipeline.sample_sft_pool_runpod'):
     processes, logs = [], []
     try:
         for rank, gpu in enumerate(gpu_ids):
@@ -136,7 +136,7 @@ def launch(cfg_path, root, run_dir, gpu_ids):
             logs.append(log)
             env = dict(os.environ, CUDA_VISIBLE_DEVICES=gpu, PYTHONUNBUFFERED='1',
                        TOKENIZERS_PARALLELISM='false', OMP_NUM_THREADS='1')
-            command = [sys.executable, '-m', 'pipeline.sample_sft_pool_runpod',
+            command = [sys.executable, '-m', module,
                        '--config', str(cfg_path), '--run-dir', str(run_dir), '--mode', 'worker',
                        '--rank', str(rank), '--gpus', ','.join(gpu_ids)]
             processes.append(subprocess.Popen(command, cwd=root, env=env,

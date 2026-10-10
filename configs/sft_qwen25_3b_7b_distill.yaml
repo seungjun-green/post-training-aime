@@ -1,0 +1,93 @@
+# Five-epoch Qwen 3B base SFT on all published self-RFT + 7B distillation rows.
+stage: stage1
+run_name: sft_qwen25_3b_base_7b_distill
+output_root: /content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-7b-distillation-sft
+model:
+  repo: Qwen/Qwen2.5-3B
+  revision: 3aab1f1954e9cc14eb9509a215f9e5ca08227a9b
+  trust_remote_code: false
+data:
+  source: jsonl
+  path: null
+  expected_rows: null
+  content_digest: null
+  ids_digest: null
+  response_format: answer_only
+  columns:
+    question: problem
+    answer: response
+  drop_missing_outputs: false
+  incorrect_grade_values: []
+  hf_source:
+    repo: Seungjun/qwen2.5-3b-self-rft-7b-distill-math
+    revision: d13f567cd42e7f7e182ea5125a288d86cbefbe67
+    config: default
+    split: train
+    expected_rows: 37691
+    selected_content_digest: 2ef22df0a630b9c2eb843a6974b8a152d4942cb7b0beeb566c6d06c155b67c2a
+max_seq_length: 20480
+sanity_example_index: 0
+masked_placeholder: '[MASKED]'
+hardware:
+  name_contains: RTX PRO 6000
+  min_memory_gib: 90
+attention:
+  implementation: sdpa
+  backend: flash_attention
+training:
+  num_train_epochs: 5
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 16
+  learning_rate: 1.0e-05
+  warmup_ratio: 0.05
+  lr_scheduler_type: cosine
+  optim: adamw_torch
+  adam_beta1: 0.9
+  adam_beta2: 0.95
+  adam_epsilon: 1.0e-08
+  weight_decay: 0.0001
+  max_grad_norm: 1.0
+  bf16: true
+  fp16: false
+  tf32: false
+  gradient_checkpointing: true
+  gradient_checkpointing_kwargs:
+    use_reentrant: false
+  seed: 42
+  data_seed: 42
+  packing: false
+  padding_free: false
+  max_length: null
+  dataset_kwargs:
+    skip_prepare_dataset: true
+  completion_only_loss: false
+  assistant_only_loss: false
+  loss_type: nll
+  remove_unused_columns: false
+  eval_strategy: 'no'
+  save_strategy: epoch
+  save_total_limit: null
+  save_only_model: false
+  save_safetensors: true
+  load_best_model_at_end: false
+  logging_strategy: steps
+  logging_steps: 1
+  logging_first_step: true
+  logging_nan_inf_filter: false
+  report_to: []
+  dataloader_drop_last: false
+  dataloader_num_workers: 0
+  dataloader_pin_memory: true
+  group_by_length: false
+  label_smoothing_factor: 0.0
+  average_tokens_across_devices: false
+  push_to_hub: false
+  disable_tqdm: false
+lm_head_chunk_tokens: 128
+smoke:
+  selection: longest
+  num_examples: 1
+  training_overrides:
+    num_train_epochs: 1
+    gradient_accumulation_steps: 1
+target_format: native_eos_completion
