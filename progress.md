@@ -13,7 +13,7 @@ Legend: — = not required; ☐ = pending; ◐ = running; ☑ = complete.
 | B0 | Qwen base | — | ☑ Complete (user reported) | — |
 | B-RL | Qwen base + RL | ☑ Complete: step 300 (user reported) | ☑ Complete (user reported) | — |
 | B-s1(kimi style) SFT | Qwen base + s1 (Kimi-style) SFT | ☑ Complete (user reported) | ☑ Complete (user reported) | — |
-| B-rejection sampling SFT | Qwen base + rejection sampling SFT | ☐ Notebook ready (5 epochs) | ☐ Automatic after each epoch | Run preparation, GPU smoke, then training/evaluation loop |
+| B-rejection sampling SFT | Qwen base + rejection sampling SFT | ☑ Complete: 5 epochs (user confirmed) | ☑ Complete; epoch 4 best (user confirmed) | — |
 | B-7B knowledge distillation SFT | Qwen base + 7B knowledge distillation SFT | ☐ Notebook ready (5 epochs) | ☐ Automatic after each epoch | Run preparation, GPU smoke, then training/evaluation loop |
 | B-rejection sampling SFT + RL | Qwen base + rejection sampling SFT + RL | ☐ Planned | ☐ Pending | Complete rejection sampling SFT; choose checkpoint and RL settings |
 | B-7B knowledge distillation SFT + RL | Qwen base + 7B knowledge distillation SFT + RL | ☐ Planned | ☐ Pending | Complete 7B distillation SFT; choose checkpoint and RL settings |
@@ -24,7 +24,7 @@ Legend: — = not required; ☐ = pending; ◐ = running; ☑ = complete.
 
 **Implemented B0/I0/I-RL protocol:** AMC 2023 (40 problems) and MATH-500 (500), temperature 0, top-p 1, one response per problem, 20,480-token response cap. Same English question/instruction and existing final-box/math-equivalence scorer; each model uses its shipped native chat template/system message and EOS token. Base uses zero-shot chat formatting, not a few-shot completion protocol. Instruct/RL templates must match. Exact model/data/code/protocol records accompany the results.
 
-**Results received 2026-10-06; B-RL added 2026-10-07:** scores and output paths below were supplied by the user from the completed evaluation. Drive artifacts have not been independently rechecked here; HF revisions are the notebook's pinned selections.
+**Results received 2026-10-06; B-RL added 2026-10-07; rejection sampling SFT added 2026-10-10:** scores and output paths below were supplied by the user from the completed evaluation. Drive artifacts have not been independently rechecked here; HF revisions are the notebook's pinned selections.
 
 Notebook: [evaluate_qwen25_3b_base_instruct_rl_amc_math.ipynb](notebooks/evaluate_qwen25_3b_base_instruct_rl_amc_math.ipynb). Self-contained, sequential evaluation of three models, optional six-response smoke, then `RUN_EVAL = True` for 1,620 responses. Resumes completed problems separately for each model.
 
@@ -33,7 +33,7 @@ Notebook: [evaluate_qwen25_3b_base_instruct_rl_amc_math.ipynb](notebooks/evaluat
 | B0 | `Qwen/Qwen2.5-3B` @ `3aab1f1954e9cc14eb9509a215f9e5ca08227a9b` | 15 | 37.5% | 1745.6 | 274 | 54.8% | 1444.2 |
 | B-RL | `dapo_qwen25_3b_pretrained_base/checkpoint-300` | 17 | 42.5% | 2340.3 | 321 | 64.2% | 895.1 |
 | B-s1(kimi style) SFT | `sft_qwen25_3b_base_s1_kimi/epoch_5` | 10 | 25.0% | 8556.8 | 257 | 51.4% | 6709.7 |
-| B-rejection sampling SFT | TBD | — | — | — | — | — | — |
+| B-rejection sampling SFT | `sft_qwen25_3b_base_self_rft/epoch_4` (user-reported best) | 15 | 37.5% | 2168.2 | 307 | 61.4% | 1032.2 |
 | B-7B knowledge distillation SFT | TBD | — | — | — | — | — | — |
 | B-rejection sampling SFT + RL | TBD | — | — | — | — | — | — |
 | B-7B knowledge distillation SFT + RL | TBD | — | — | — | — | — | — |
@@ -109,6 +109,15 @@ Local preparation on the pinned dataset and real base tokenizer retained all **2
 
 **Evaluation after every SFT epoch:** each epoch checkpoint is evaluated on AMC 2023 (40 problems) and MATH-500 (500) at temperature 0, one response per problem, max 20,480 tokens, using the existing scorer. This is **2,700 responses** across five epochs. The training subprocess exits after its durable epoch save so vLLM can use the GPU; the next training process resumes optimizer, scheduler, RNG, and Trainer state with the original five-epoch schedule. A failed/interrupted evaluation must finish before the next epoch starts. Results do not alter training or select a best checkpoint. The notebook displays one tqdm bar per stage (training loss/LR in the postfix) and prints the two-benchmark results after each epoch; detailed diagnostics remain in the console logs.
 
+**B-rejection sampling SFT results (2026-10-10, user reported):** the user identifies **epoch 4** as the best checkpoint. At temperature 0: AMC 2023 **15/40 (37.5%)**, mean **2168.2 tokens**; MATH-500 **307/500 (61.4%)**, mean **1032.2 tokens**. Relative to B0, AMC accuracy is unchanged and MATH-500 increases by **6.6 percentage points**. The best-checkpoint designation is user reported; other epoch scores and Drive artifacts have not been independently compared here. The user confirmed training and evaluation are complete through epoch 5, with epoch 4 selected as the best checkpoint.
+
+```text
+# Reported best model checkpoint (configured path)
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rejection-sampling-sft/checkpoints/stage1/sft_qwen25_3b_base_self_rft/epoch_4/
+# Epoch-4 metrics (user-reported path)
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rejection-sampling-sft/eval/amc2023_math500_temp0/sft_qwen25_3b_base_self_rft/epoch_4/full/results/sft_qwen25_3b_base_self_rft_epoch4.json
+```
+
 **B-rejection sampling SFT configured locations:**
 
 ```text
@@ -160,7 +169,7 @@ These are absolute **Colab-mounted Drive paths** (`/content/drive/MyDrive/` = My
 | B0 | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/eval-base-instruct-rl-amc-math-temp0/base` | Completed evaluation outputs (user reported) |
 | B-RL | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rl-native-eos` | Completed step-300 training and evaluation (user reported) |
 | B-s1(kimi style) SFT | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-sft-v2-short` | Completed training and evaluation (user reported) |
-| B-rejection sampling SFT | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rejection-sampling-sft` | Configured in SFT notebook; training pending |
+| B-rejection sampling SFT | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rejection-sampling-sft` | Five-epoch training/evaluation complete; epoch 4 best (user confirmed) |
 | B-7B knowledge distillation SFT | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-7b-distillation-sft` | Configured in SFT notebook; training pending |
 | B-rejection sampling SFT + RL | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rejection-sampling-sft-rl` | Planned; not configured yet |
 | B-7B knowledge distillation SFT + RL | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-7b-distillation-sft-rl` | Planned; not configured yet |
