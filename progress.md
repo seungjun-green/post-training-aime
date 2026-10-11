@@ -40,6 +40,81 @@ Notebook: [evaluate_qwen25_3b_base_instruct_rl_amc_math.ipynb](notebooks/evaluat
 | I0 | `Qwen/Qwen2.5-3B-Instruct` @ `aa8e72537993ba99e69dfaafa59ed015b17504d1` | 21 | 52.5% | 1780.1 | 350 | 70.0% | 780.4 |
 | I-RL | MemoryFix `checkpoint-300` | 20 | 50.0% | 1810.4 | 329 | 65.8% | 1012.7 |
 
+## Dataset creation
+
+### Part 1: Creating the 30K problem pool
+
+1. **Collect sources:** MATH train (7.5K), NuminaMath-1.5, and s1K.
+2. **Verifiability filter:** drop proofs, multiple-choice, and multi-part questions, plus problems with a missing or unparseable gold answer. For s1K, keep only math problems.
+3. **Deduplicate within the pool:** exact matches after text normalization, then near-duplicates with MinHash. Source priority: MATH > NuminaMath > s1K.
+4. **Decontaminate:** remove problems with ≥70% 8-gram coverage of any single eval problem from AIME 2024–2026, AMC 2023, or MATH-500.
+   - Coverage is measured relative to the eval problem, so an eval question embedded in a longer training prompt is also caught.
+   - Eval problems shorter than 8 tokens use exact normalized substring matching.
+   - Problems at 50–70% coverage are logged as near misses.
+5. **Remove RL overlap:** the same 8-gram check against DAPO-Math-17K, so SFT and RL problems stay disjoint.
+   - Result: 380,943 problems ([`Seungjun/clean-math-sft-pool`](https://huggingface.co/datasets/Seungjun/clean-math-sft-pool)).
+6. **Filter rows and sources:**
+   - remove all eval and RL near misses
+   - remove NuminaMath multiple-choice and `other` question types, and rows failing NuminaMath's problem/solution validity flags
+   - drop the `orca_math`, `cn_k12`, and `metamath` sub-sources
+7. **Subsample to ~29K problems:**
+   - all MATH and s1K problems
+   - olympiads 10K, synthetic_math 8K, aops_forum 3K, cn_contest 3K
+   - all of inequalities, number_theory, and olympiads_ref
+   - Algebra capped at 40% within each sampled sub-source
+8. **Add labels:** `domain` (NuminaMath's `problem_type`, with MATH's subject types mapped onto it) and `answer_type`.
+9. **Pre-generation cleaning** (`TODO: confirm which of these were applied`):
+   - remove leftover translation instructions, CJK text, and references to missing figures
+   - remove hard-to-grade answer types: equations, ratios/percents/base-n numbers, multi-part answers, very long answers, and indefinite integrals
+   - fix gold answers with leftover `\mathrm{~}` unit residue
+   - correct 6 malformed gold answers
+   - Result: 27,001 problems ([`Seungjun/clean-math-sft-pool-30k`](https://huggingface.co/datasets/Seungjun/clean-math-sft-pool-30k)).
+
+### Part 2: 3B self-RFT dataset
+
+1. **Generate with the 3B:** Qwen2.5-3B (base), 8 samples per problem, temperature 1.0, up to 4,096 tokens, final answer in `\boxed{}`, graded with Math-Verify.
+   - 49% of problems were never solved (0/8); 13,669 were solved at least once.
+2. **Per-answer cleanup:**
+   - keep only correct answers with `finish_reason = stop`
+   - cut each answer right after its final `\boxed{...}`, keeping a closing `$`, `\]`, `\)`, or period
+   - drop answers with no `\boxed{}` or containing CJK characters
+3. **Problem selection by difficulty** (3B pass count):
+   - keep all 1/8–7/8 problems
+   - keep a random third of the 8/8 problems (seed 42)
+   - exclude 0/8 problems, which have no correct answers
+4. **Deduplicate and cap:**
+   - within each problem, remove near-duplicate solutions with 4-gram Jaccard similarity ≥ 0.7, shortest first
+   - cap at 3 solutions for 1–6/8 problems and 2 for 7–8/8
+   - reshape to one row per (problem, solution) pair
+5. **Domain balancing:** skipped, since most Algebra examples were medium or hard.
+6. **Post-filter:** remove responses containing code blocks, chat/role junk, or fewer than 80 characters.
+   - Result: 28,267 examples across 12,863 problems ([`Seungjun/qwen2.5-3b-self-rft-math`](https://huggingface.co/datasets/Seungjun/qwen2.5-3b-self-rft-math)).
+
+### Part 3: Mixed 3B + 7B dataset
+
+1. **Generate with the 7B teacher:** Qwen2.5-Math-7B-Instruct, run only on the 18,520 problems where the 3B was correct 0–2 times. 8 samples per problem, temperature `TODO`, graded with Math-Verify.
+
+   - 1,903 new problems: the 3B never solved them, and the 7B solved them at least 2/8 times.
+   - On 3,268 of the 5,188 problems at 1–2/8, the 7B added at least one correct solution.
+   - 10,326 problems remained unsolved by both models.
+
+2. **Per-answer cleanup, for both models:** the same as Part 2, with the post-filters (code blocks, chat/role junk, under 80 characters) applied here.
+
+3. **Assign each problem to a group:**
+
+   | Group | Solutions used | Cap |
+   | --- | --- | --- |
+   | 3B 3–8/8 | 3B only (random third of 8/8 kept) | 3 for 3–6/8, 2 for 7–8/8 |
+   | 3B 1–2/8 | 3B first, then filled with 7B (7B ≥ 1/8) | 3 |
+   | 3B 0/8, 7B ≥ 2/8 | 7B only | 3 |
+   | 3B 0/8, 7B ≤ 1/8 | excluded | — |
+
+4. **Deduplicate and cap:** 3B and 7B solutions are deduplicated together (4-gram Jaccard ≥ 0.7). Each row gets a `solution_source` column (`3B` or `7B`).
+
+   - Result: `TODO` examples across `TODO` problems ([`Seungjun/qwen2.5-3b-self-rft-7b-distill-math`](https://huggingface.co/datasets/Seungjun/qwen2.5-3b-self-rft-7b-distill-math)).
+
+The EOS token is not stored in the data; it is appended to each response in the SFT training code.
+
 ## Training information
 
 | ID | Starting model | Training data / target | Epochs or optimizer steps |
