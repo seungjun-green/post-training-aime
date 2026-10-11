@@ -1,6 +1,6 @@
 # Qwen experiment roadmap
 
-Updated: 2026-10-11. This is the current roadmap provided by the user; previous plans in `README.md` and `write-up.md` do not define this experiment list.
+Updated: 2026-10-12. This is the current roadmap provided by the user; previous plans in `README.md` and `write-up.md` do not define this experiment list.
 
 Model family: **Qwen2.5-3B**, matching the current instruct + RL run. Base revision is now pinned to `3aab1f1954e9cc14eb9509a215f9e5ca08227a9b`; future training settings remain to be decided. Status reflects reported progress, not live monitoring of Drive.
 
@@ -15,8 +15,8 @@ Legend: — = not required; ☐ = pending; ◐ = running; ☑ = complete.
 | B-s1(kimi style) SFT | Qwen base + s1 (Kimi-style) SFT | ☑ Complete (user reported) | ☑ Complete (user reported) | — |
 | B-rejection sampling SFT | Qwen base + rejection sampling SFT | ☑ Complete: 5 epochs (user confirmed) | ☑ Complete; epoch 4 best (user confirmed) | — |
 | B-7B knowledge distillation SFT | Qwen base + 7B knowledge distillation SFT | ☑ Epochs 1–7 complete (user reported) | ☑ Epochs 1–7 complete; epoch 5 selected for RL | — |
-| B-rejection sampling SFT + RL | Qwen base + rejection sampling SFT + RL | ☐ Notebook ready: 300 DAPO updates from SFT epoch 4 | ☐ Pending | Run preparation, smoke and full RL training |
-| B-7B knowledge distillation SFT + RL | Qwen base + 7B knowledge distillation SFT + RL | ☐ Notebook ready: 300 DAPO updates from SFT epoch 5 | ☐ Pending | Run preparation, smoke and full RL training |
+| B-rejection sampling SFT + RL | Qwen base + rejection sampling SFT + RL | ☐ Notebook ready: 300 DAPO updates from SFT epoch 4 | ☐ Evaluation notebook ready: checkpoint 300, AMC 2023 + MATH-500 | Run evaluation once checkpoint 300 is available |
+| B-7B knowledge distillation SFT + RL | Qwen base + 7B knowledge distillation SFT + RL | ☐ Notebook ready: 300 DAPO updates from SFT epoch 5 | ☐ Evaluation notebook ready: checkpoint 300, AMC 2023 + MATH-500 | Run evaluation once checkpoint 300 is available |
 | I0 | Qwen instruct | — | ☑ Complete (user reported) | — |
 | I-RL | Qwen instruct + RL | ☑ Complete (user reported) | ☑ Complete (user reported) | — |
 
@@ -322,6 +322,23 @@ Same DAPO settings as B-RL and the 7B-distillation SFT + RL notebook: 14,068 ver
 # Full console log
 /content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rejection-sampling-sft-rl/logs/dapo_qwen25_3b_rejection_epoch4_sft/training_console.log
 ```
+
+**Joint SFT + RL evaluation notebook ready:** [evaluate_qwen25_3b_sft_rl_checkpoint300_amc_math.ipynb](notebooks/evaluate_qwen25_3b_sft_rl_checkpoint300_amc_math.ipynb). Evaluates **7B-distillation SFT epoch 5 + RL checkpoint-300** and **3B rejection-sampling SFT epoch 4 + RL checkpoint-300**, sequentially on AMC 2023 (40) and MATH-500 (500). Temperature 0, top-p 1, seed 42, one response per problem, 20,480-token response cap. Uses saved native chat templates and EOS/PAD. Checks RL checkpoint completeness and SFT parent provenance from the training manifests; original SFT weights and RL optimizer files are not required. Self-contained, optional four-response smoke, then `RUN_EVAL = True` for 1,080 responses; separate per-model resume journals and a four-row comparison table. Evaluation scores are pending; GPU inference has not been run locally.
+
+Configured comparison output root:
+
+```text
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/eval-sft-rl-step300-amc-math-temp0/
+```
+
+Under this root, `comparison_table.csv` and `comparison_table.json` contain both models' results, and `model_selection.json` records selected checkpoints.
+
+| Variant | Metrics file | Generated responses file |
+| --- | --- | --- |
+| 7B-distillation SFT epoch 5 + RL step 300 | `distill_rl/full/results/qwen_distill_rl_step300.json` | `distill_rl/full/results/qwen_distill_rl_step300_generations.jsonl` |
+| 3B rejection-sampling SFT epoch 4 + RL step 300 | `rejection_rl/full/results/qwen_rejection_rl_step300.json` | `rejection_rl/full/results/qwen_rejection_rl_step300_generations.jsonl` |
+
+Each variant also saves `<run_name>_problems.jsonl` (resume journal), manifest/engine/protocol records, and `logs/eval_console.log`. Smoke outputs use `smoke/` instead of `full/`.
 
 ## Google Drive paths
 
