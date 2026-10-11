@@ -14,9 +14,9 @@ Legend: — = not required; ☐ = pending; ◐ = running; ☑ = complete.
 | B-RL | Qwen base + RL | ☑ Complete: step 300 (user reported) | ☑ Complete (user reported) | — |
 | B-s1(kimi style) SFT | Qwen base + s1 (Kimi-style) SFT | ☑ Complete (user reported) | ☑ Complete (user reported) | — |
 | B-rejection sampling SFT | Qwen base + rejection sampling SFT | ☑ Complete: 5 epochs (user confirmed) | ☑ Complete; epoch 4 best (user confirmed) | — |
-| B-7B knowledge distillation SFT | Qwen base + 7B knowledge distillation SFT | ☑ 5 epochs complete; epochs 6–7 continuation notebook ready | ☑ Epochs 1–5 complete; epoch 5 selected; 6–7 pending | Run the separate continuation notebook |
-| B-rejection sampling SFT + RL | Qwen base + rejection sampling SFT + RL | ☐ Planned | ☐ Pending | Complete rejection sampling SFT; choose checkpoint and RL settings |
-| B-7B knowledge distillation SFT + RL | Qwen base + 7B knowledge distillation SFT + RL | ☐ Planned | ☐ Pending | Complete 7B distillation SFT; choose checkpoint and RL settings |
+| B-7B knowledge distillation SFT | Qwen base + 7B knowledge distillation SFT | ☑ Epochs 1–7 complete (user reported) | ☑ Epochs 1–7 complete; epoch 5 selected for RL | — |
+| B-rejection sampling SFT + RL | Qwen base + rejection sampling SFT + RL | ☐ Notebook ready: 300 DAPO updates from SFT epoch 4 | ☐ Pending | Run preparation, smoke and full RL training |
+| B-7B knowledge distillation SFT + RL | Qwen base + 7B knowledge distillation SFT + RL | ☐ Notebook ready: 300 DAPO updates from SFT epoch 5 | ☐ Pending | Run preparation, smoke and full RL training |
 | I0 | Qwen instruct | — | ☑ Complete (user reported) | — |
 | I-RL | Qwen instruct + RL | ☑ Complete (user reported) | ☑ Complete (user reported) | — |
 
@@ -49,8 +49,8 @@ Notebook: [evaluate_qwen25_3b_base_instruct_rl_amc_math.ipynb](notebooks/evaluat
 | B-s1(kimi style) SFT | Same base revision as B0 | [Seungjun/dp_removed_s1K-1.1](https://huggingface.co/datasets/Seungjun/dp_removed_s1K-1.1) @ `636ecf409774771afb0bf10a436f4b1e608b5f29`; `default` / `train`; input `question`, full target `kimi-style-reasoning-answer`; 996 source rows, 989 retained | 5 epochs; 62 updates/epoch, 310 total |
 | B-rejection sampling SFT | Same base revision as B0 | [Seungjun/qwen2.5-3b-self-rft-math](https://huggingface.co/datasets/Seungjun/qwen2.5-3b-self-rft-math) @ `96c5f70e37098a9f41f5e44adc4e906ee3f5ef15`; `default` / `train`; input `problem`, target full `response`; 28,267 rows, 12,863 unique problem IDs | 5 epochs; 1,767 updates/epoch, 8,835 total |
 | B-7B knowledge distillation SFT | Same base revision as B0 | [Seungjun/qwen2.5-3b-self-rft-7b-distill-math](https://huggingface.co/datasets/Seungjun/qwen2.5-3b-self-rft-7b-distill-math) @ `d13f567cd42e7f7e182ea5125a288d86cbefbe67`; input `problem`, target full `response`; 37,691 rows / 14,853 unique problems; both 3B and 7B response sources | 5 epochs; 2,356 updates/epoch, 11,780 total |
-| B-rejection sampling SFT + RL | B-rejection sampling SFT checkpoint (TBD) | RL dataset and settings TBD | TBD |
-| B-7B knowledge distillation SFT + RL | B-7B knowledge distillation SFT checkpoint (TBD) | RL dataset and settings TBD | TBD |
+| B-rejection sampling SFT + RL | Selected `sft_qwen25_3b_base_self_rft/epoch_4` | Same verified 14,068-row English DAPO dataset and settings as B-RL; native Qwen EOS/PAD | 300 fresh RL optimizer updates; 150 rollout batches; save every 20 |
+| B-7B knowledge distillation SFT + RL | Original `sft_qwen25_3b_base_7b_distill/epoch_5` | Same verified 14,068-row English DAPO dataset and settings as B-RL; native Qwen EOS/PAD | 300 fresh RL optimizer updates; 150 rollout batches; save every 20 |
 | I0 | `Qwen/Qwen2.5-3B-Instruct` | None; use the same starting revision as I-RL | No training |
 | I-RL | `Qwen/Qwen2.5-3B-Instruct` @ `aa8e72537993ba99e69dfaafa59ed015b17504d1` | `Seungjun/dp_removed_DAPO-Math-17k-Processed`, `en` / `train`; 14,068 rows; exact resolved revision in run manifest | 300 total; recovered from step 40 |
 
@@ -143,15 +143,19 @@ Same five-epoch SFT settings as the self-RFT experiment: full parameters, BF16, 
 
 Local preparation verified **37,691 retained rows**, **0** missing/overlength targets, and no truncation. Full-sequence median/max: **511 / 2,839** tokens. Mean supervised target including EOS: **468.0** tokens. Five epochs present **188,455** rows and take **11,780** optimizer updates. **7 focused tests passed**, covering pinned column selection, native-EOS loss masking, checkpoint save/reload and exact CPU resume, the isolated bundle, epoch evaluation recovery, tqdm output, and evaluator scoring/resume.
 
-**B-7B knowledge distillation SFT completion (2026-10-11, user reported):** all five training epochs and their AMC/MATH evaluations are complete (11,780 optimizer updates). The user selected **epoch 5** for the main results table: AMC 2023 **19/40 (47.5%)**, mean **1702.4 tokens**; MATH-500 **323/500 (64.6%)**, mean **1161.3 tokens**. Relative to B0, accuracy increases by **10.0** and **9.8 percentage points**, respectively. Epoch 5 has the highest AMC accuracy; epochs 1 and 4 tie for highest MATH-500 accuracy (64.8%). These are user-supplied results; Drive artifacts have not been independently inspected.
+**B-7B knowledge distillation SFT completion (2026-10-11, user reported):** the original five epochs and the two continuation epochs are complete, including AMC/MATH evaluation (16,492 total SFT updates). The user selected **original epoch 5** for the main results table and RL initialization: AMC 2023 **19/40 (47.5%)**, mean **1702.4 tokens**; MATH-500 **323/500 (64.6%)**, mean **1161.3 tokens**. Relative to B0, accuracy increases by **10.0** and **9.8 percentage points**, respectively. Epoch 5 has the highest AMC accuracy; epoch 7 has the highest MATH-500 accuracy (66.0%). These are user-supplied results; Drive artifacts have not been independently inspected.
 
-| Epoch | AMC correct / 40 | AMC accuracy | AMC mean tokens | MATH correct / 500 | MATH accuracy | MATH mean tokens |
-| --- | --- | --- | --- | --- | --- | --- |
-| 1 | 15 | 37.5% | 1291.5 | 324 | 64.8% | 1309.9 |
-| 2 | 12 | 30.0% | 2816.8 | 322 | 64.4% | 1196.0 |
-| 3 | 14 | 35.0% | 1694.7 | 318 | 63.6% | 893.9 |
-| 4 | 16 | 40.0% | 2212.1 | 324 | 64.8% | 1114.0 |
-| **5 (selected)** | **19** | **47.5%** | **1702.4** | **323** | **64.6%** | **1161.3** |
+| Epoch | Last logged loss | AMC correct / 40 | AMC accuracy | AMC mean tokens | MATH correct / 500 | MATH accuracy | MATH mean tokens |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 0.2861 | 15 | 37.5% | 1291.5 | 324 | 64.8% | 1309.9 |
+| 2 | 0.3290 | 12 | 30.0% | 2816.8 | 322 | 64.4% | 1196.0 |
+| 3 | 0.4113 | 14 | 35.0% | 1694.7 | 318 | 63.6% | 893.9 |
+| 4 | 0.1586 | 16 | 40.0% | 2212.1 | 324 | 64.8% | 1114.0 |
+| **5 (selected for RL)** | 0.3513 | **19** | **47.5%** | 1702.4 | 323 | 64.6% | 1161.3 |
+| 6 | 0.2338 | 16 | 40.0% | 1706.0 | 321 | 64.2% | 1110.0 |
+| 7 | 0.2911 | 15 | 37.5% | 2206.7 | **330** | **66.0%** | 1138.9 |
+
+Loss values are the final logged training losses displayed by tqdm, not epoch averages. All benchmark evaluations used temperature 0.
 
 **Reported evaluation files:**
 
@@ -187,7 +191,7 @@ Local preparation verified **37,691 retained rows**, **0** missing/overlength ta
 /content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-7b-distillation-sft/eval/amc2023_math500_temp0/sft_qwen25_3b_base_7b_distill/epoch_summary.json
 ```
 
-**B-7B distillation continuation (2026-10-11):** [continue_qwen25_3b_7b_distill_epoch5_to7.ipynb](notebooks/continue_qwen25_3b_7b_distill_epoch5_to7.ipynb) continues from the original `epoch_5` for **two additional epochs (6–7)**. Status: notebook ready; GPU training/evaluation not yet run. Restore model weights, AdamW moments, RNG and Trainer state. Start a **new LR schedule at 1e-6**, cosine decay to zero across **4,712 additional updates**, no warmup. All other training settings, the exact pinned dataset, response-only loss mask, native EOS/PAD and chat template are preserved. Global steps continue from **11,780 to 16,492**. Epoch-6 resumes preserve the new schedule's position.
+**B-7B distillation continuation (2026-10-11):** [continue_qwen25_3b_7b_distill_epoch5_to7.ipynb](notebooks/continue_qwen25_3b_7b_distill_epoch5_to7.ipynb) continued from the original `epoch_5` for **two additional epochs (6–7)**. Status: **training and both evaluations complete (user reported)**. Restored model weights, AdamW moments, RNG and Trainer state. Started a **new LR schedule at 1e-6**, cosine decay to zero across **4,712 additional updates**, no warmup. All other training settings, the exact pinned dataset, response-only loss mask, native EOS/PAD and chat template were preserved. Global steps continued from **11,780 to 16,492**. Epoch-6 resumes preserve the new schedule's position.
 
 Evaluate AMC 2023 and MATH-500 after each additional epoch at temperature 0, with the same 20,480-token generation cap. Display compact tqdm progress and print both scores after each epoch. Original epoch-1–5 artifacts stay in their original folder; continuation artifacts use the separate root below. **13 focused tests passed**, including actual tiny-Qwen CPU optimizer/scheduler restoration, identical weights after interrupted epoch-6 resume, parent/data validation, evaluation interruption recovery and isolated notebook bundle checks.
 
@@ -202,6 +206,46 @@ Evaluate AMC 2023 and MATH-500 after each additional epoch at temperature 0, wit
 /content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-7b-distillation-sft-epoch5-to7/logs/stage1/sft_qwen25_3b_base_7b_distill_continue/run_manifest.json
 # Epoch-6/7 evaluation summary; epoch_6 and epoch_7 folders contain metrics and generations
 /content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-7b-distillation-sft-epoch5-to7/eval/amc2023_math500_temp0/sft_qwen25_3b_base_7b_distill_continue/epoch_summary.csv
+# Epoch 6 metrics (user reported)
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-7b-distillation-sft-epoch5-to7/eval/amc2023_math500_temp0/sft_qwen25_3b_base_7b_distill_continue/epoch_6/full/results/sft_qwen25_3b_base_7b_distill_continue_epoch6.json
+# Epoch 7 metrics (user reported)
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-7b-distillation-sft-epoch5-to7/eval/amc2023_math500_temp0/sft_qwen25_3b_base_7b_distill_continue/epoch_7/full/results/sft_qwen25_3b_base_7b_distill_continue_epoch7.json
+```
+
+**B-7B knowledge distillation SFT + RL notebook ready:** [train_dapo_qwen25_3b_7b_distill_epoch5.ipynb](notebooks/train_dapo_qwen25_3b_7b_distill_epoch5.ipynb), config [dapo_qwen25_3b_7b_distill.yaml](configs/dapo_qwen25_3b_7b_distill.yaml). Starts from **original SFT epoch 5**, with **300 fresh DAPO updates**. Restores SFT weights/tokenizer only; creates a new RL optimizer, scheduler and seed-42 RNG state. Same data, rewards, sampling and optimization as B-RL: 14,068 verified rows, G=8, 16 retained questions, two disjoint 64-response updates per rollout, LR 1e-6, 20-update warmup then constant, response cap 20,480, soft penalty above 16,384, no KL. Preserves saved native chat template, vocabulary and EOS/PAD `<|endoftext|>` (151643), including the chunked Qwen memory fix. Full parameters; RTX PRO 6000 96GB; FP32 parameters/Adam, BF16 compute. Separate smoke and full-run cells, compact progress, automatic latest-RL-checkpoint resume. No automatic evaluation/upload. **42 local tests passed**; real GPU training has not been run here.
+
+```text
+# SFT initialization: original epoch 5 (not the epoch-7 continuation)
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-7b-distillation-sft/checkpoints/stage1/sft_qwen25_3b_base_7b_distill/epoch_5/
+# RL root
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-7b-distillation-sft-rl
+# RL final model (intermediate checkpoints 20/40/.../280)
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-7b-distillation-sft-rl/checkpoints/dapo_qwen25_3b_7b_distill_epoch5_sft/checkpoint-300/
+# RL loss/reward/length history
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-7b-distillation-sft-rl/logs/dapo_qwen25_3b_7b_distill_epoch5_sft/steps.jsonl
+# RL manifest, including SFT parent identity
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-7b-distillation-sft-rl/logs/dapo_qwen25_3b_7b_distill_epoch5_sft/run_manifest.json
+# Full console log
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-7b-distillation-sft-rl/logs/dapo_qwen25_3b_7b_distill_epoch5_sft/training_console.log
+```
+
+**B-rejection sampling SFT + RL notebook ready:** [train_dapo_qwen25_3b_rejection_epoch4.ipynb](notebooks/train_dapo_qwen25_3b_rejection_epoch4.ipynb), config [dapo_qwen25_3b_rejection.yaml](configs/dapo_qwen25_3b_rejection.yaml). Starts explicitly from the user-selected **3B rejection-sampling SFT epoch 4** (SFT step 7,068; AMC 37.5%, MATH-500 61.4%), even when the later epoch-5 checkpoint exists. Validates the SFT run identity, dataset, saved tokenizer/template and complete weight shards. Initializes **300 fresh DAPO updates** with a new optimizer/scheduler and seed-42 RNG; SFT optimizer state is not restored. RL resumes restore this RL run's own state.
+
+Same DAPO settings as B-RL and the 7B-distillation SFT + RL notebook: 14,068 verified English rows, G=8, 16 retained questions, two disjoint 64-response updates per rollout, LR 1e-6 with 20-update warmup then constant, response cap 20,480, soft penalty above 16,384, no KL. Native Qwen chat template, vocabulary and EOS/PAD `<|endoftext|>` (151643) are preserved. Includes the chunked vocabulary-projection memory fix, compact progress, separate smoke, checkpoints every 20 updates and automatic latest-RL-checkpoint resume. Self-contained; no automatic evaluation/upload. **52 local tests passed** across rejection/distillation/base RL source selection, fresh RL initialization, resume, isolated bundles, DAPO loss and memory checks. GPU training has not been run locally.
+
+```text
+# Selected SFT initialization
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rejection-sampling-sft/checkpoints/stage1/sft_qwen25_3b_base_self_rft/epoch_4/
+# RL root
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rejection-sampling-sft-rl
+# RL final model (intermediate checkpoints 20/40/.../280)
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rejection-sampling-sft-rl/checkpoints/dapo_qwen25_3b_rejection_epoch4_sft/checkpoint-300/
+# RL loss/reward/length history
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rejection-sampling-sft-rl/logs/dapo_qwen25_3b_rejection_epoch4_sft/steps.jsonl
+# RL manifest, including SFT parent identity
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rejection-sampling-sft-rl/logs/dapo_qwen25_3b_rejection_epoch4_sft/run_manifest.json
+# Full console log
+/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rejection-sampling-sft-rl/logs/dapo_qwen25_3b_rejection_epoch4_sft/training_console.log
 ```
 
 ## Google Drive paths
@@ -215,8 +259,8 @@ These are absolute **Colab-mounted Drive paths** (`/content/drive/MyDrive/` = My
 | B-s1(kimi style) SFT | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-sft-v2-short` | Completed training and evaluation (user reported) |
 | B-rejection sampling SFT | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rejection-sampling-sft` | Five-epoch training/evaluation complete; epoch 4 best (user confirmed) |
 | B-7B knowledge distillation SFT | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-7b-distillation-sft` | Five-epoch training/evaluation complete; epoch 5 selected (user reported) |
-| B-rejection sampling SFT + RL | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rejection-sampling-sft-rl` | Planned; not configured yet |
-| B-7B knowledge distillation SFT + RL | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-7b-distillation-sft-rl` | Planned; not configured yet |
+| B-rejection sampling SFT + RL | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-rejection-sampling-sft-rl` | Configured: epoch-4 SFT → 300 DAPO updates; not yet run |
+| B-7B knowledge distillation SFT + RL | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/base-7b-distillation-sft-rl` | Configured: epoch-5 SFT → 300 DAPO updates; not yet run |
 | I0 | `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/eval-base-instruct-rl-amc-math-temp0/instruct` | Completed evaluation outputs (user reported) |
 | I-RL | `/content/drive/MyDrive/LG-AIME-DAPO-Qwen25-3B-MiniBatch300-MemoryFix` | Current configured recovery run |
 

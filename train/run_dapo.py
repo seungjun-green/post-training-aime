@@ -65,11 +65,11 @@ def validate_resume(checkpoints, log_dir, resume, identity, recovery=None):
         write_jsonl(log_dir / "steps.jsonl", [r for r in records if r["step"] <= cutoff])
 
 
-def main():
+def main(*, model_selector=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True)
     parser.add_argument("--model-kind", choices=["base", "sft"], required=True)
-    parser.add_argument("--sft-root", default="", help="Required only for the EXAONE SFT source")
+    parser.add_argument("--sft-root", default="", help="Root of the configured SFT source run")
     parser.add_argument("--output-root", required=True)
     parser.add_argument("--work-dir", required=True, help="Local SSD directory for rollout weight transfer")
     parser.add_argument("--prepare-only", action="store_true")
@@ -105,7 +105,10 @@ def main():
         marker, _ = check_checkpoint(resume_checkpoint)
         if marker["global_step"] % batch_schedule(config)["updates_per_rollout"]:
             raise ValueError("Resume must start at a complete rollout cycle boundary")
-    source, source_identity = select_model(config, args.model_kind, args.sft_root)
+    if model_selector is None:
+        source, source_identity = select_model(config, args.model_kind, args.sft_root)
+    else:
+        source, source_identity = model_selector(config, args.model_kind, args.sft_root, root)
     # Keep the original resolved dataset revision on resume, even if HF main moved.
     previous_manifest = log_dir / "run_manifest.json"
     if args.resume_from_checkpoint and previous_manifest.is_file():
