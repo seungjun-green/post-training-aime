@@ -1,0 +1,167 @@
+[
+  {
+    "path": "third_party/instruction_following_eval/evaluation_lib.py",
+    "url": "https://raw.githubusercontent.com/google-research/google-research/5b381db4139c3cbf25cc9a698c5fe9754215fae2/instruction_following_eval/evaluation_lib.py",
+    "sha256": "35decc06000718487f44d7deafa6d3f48a8ec0886281edf40162c0265b7d248c"
+  },
+  {
+    "path": "third_party/instruction_following_eval/instructions.py",
+    "url": "https://raw.githubusercontent.com/google-research/google-research/5b381db4139c3cbf25cc9a698c5fe9754215fae2/instruction_following_eval/instructions.py",
+    "sha256": "60e086f5342a03ce8e18b64bbcccf86308f523c08aa826707a562150a52f3edf"
+  },
+  {
+    "path": "third_party/instruction_following_eval/instructions_registry.py",
+    "url": "https://raw.githubusercontent.com/google-research/google-research/5b381db4139c3cbf25cc9a698c5fe9754215fae2/instruction_following_eval/instructions_registry.py",
+    "sha256": "ec92d72c264f6d906978613085db262356174300370a3fffe6fefd5969ce9cfc"
+  },
+  {
+    "path": "third_party/instruction_following_eval/instructions_util.py",
+    "url": "https://raw.githubusercontent.com/google-research/google-research/5b381db4139c3cbf25cc9a698c5fe9754215fae2/instruction_following_eval/instructions_util.py",
+    "sha256": "a73797261eee5bf447e279d82a2b700b1bdd3cb1193412dbab1270a85832bc6b"
+  },
+  {
+    "path": "third_party/instruction_following_eval/LICENSE",
+    "url": "https://raw.githubusercontent.com/google-research/google-research/5b381db4139c3cbf25cc9a698c5fe9754215fae2/LICENSE",
+    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+  },
+  {
+    "path": "third_party/bbh/LICENSE",
+    "url": "https://raw.githubusercontent.com/suzgunmirac/BIG-Bench-Hard/9ee07bd481feebf959a6b59d61ea57bdcf30964d/LICENSE",
+    "sha256": "4ef2ff4295d26ab6211235039c132697408cec5391d2c091b41e983771978db8"
+  },
+  {
+    "path": "third_party/mmlu_pro/LICENSE",
+    "url": "https://raw.githubusercontent.com/TIGER-AI-Lab/MMLU-Pro/f418b116db00b065c2aea046518d8fcf74d39872/LICENSE",
+    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+  },
+  {
+    "path": "third_party/mmlu_pro/initial_prompt.txt",
+    "url": "https://raw.githubusercontent.com/TIGER-AI-Lab/MMLU-Pro/f418b116db00b065c2aea046518d8fcf74d39872/cot_prompt_lib/initial_prompt.txt",
+    "sha256": "d7337806b4d84eef7a86bcb20bf3d64b65e72736c1603e16d08cadebac436f0a"
+  },
+  {
+    "path": "third_party/bbh/cot-prompts/boolean_expressions.txt",
+    "url": "https://raw.githubusercontent.com/suzgunmirac/BIG-Bench-Hard/9ee07bd481feebf959a6b59d61ea57bdcf30964d/cot-prompts/boolean_expressions.txt",
+    "sha256": "685affba97425cdf3549d5d313ba876caed2fa7c8a4cf1ea7549faf22179609d"
+  },
+  {
+    "path": "third_party/bbh/cot-prompts/causal_judgement.txt",
+    "url": "https://raw.githubusercontent.com/suzgunmirac/BIG-Bench-Hard/9ee07bd481feebf959a6b59d61ea57bdcf30964d/cot-prompts/causal_judgement.txt",
+    "sha256": "14377e36cccb084b7d0fe73988d08696f7675d712b02d3ae1f5f7f12c77028ea"
+  },
+  {
+    "path": "third_party/bbh/cot-prompts/disambiguation_qa.txt",
+    "url": "https://raw.githubusercontent.com/suzgunmirac/BIG-Bench-Hard/9ee07bd481feebf959a6b59d61ea57bdcf30964d/cot-prompts/disambiguation_qa.txt",
+    "sha256": "794fd259297972a4c963a5d13a84dc221edde460de27fa5d8fd64299a2001597"
+  },
+  {
+    "path": "third_party/bbh/cot-prompts/dyck_languages.txt",
+    "url": "https://raw.githubusercontent.com/suzgunmirac/BIG-Bench-Hard/9ee07bd481feebf959a6b59d61ea57bdcf30964d/cot-prompts/dyck_languages.txt",
+    "sha256": "b0836603007ec659ed685458647fb6d7543543304e7aca909b995d0c3aff22b2"
+  },
+  {
+    "path": "third_party/bbh/cot-prompts/formal_fallacies.txt",
+    "url": "https://raw.githubusercontent.com/suzgunmirac/BIG-Bench-Hard/9ee07bd481feebf959a6b59d61ea57bdcf30964d/cot-prompts/formal_fallacies.txt",
+    "sha256": "10c06cc362520e9b8dddfc4861e263ff668d228a52d958dcc69f09f1d224935a"
+  },
+  {
+    "path": "third_party/bbh/cot-prompts/hyperbaton.txt",
+    "url": "https://raw.githubusercontent.com/suzgunmirac/BIG-Bench-Hard/9ee07bd481feebf959a6b59d61ea57bdcf30964d/cot-prompts/hyperbaton.txt",
+    "sha256": "19898af91c35cb26bbdf5fdb6f6fb17e138677250332e2994005625ffb50b261"
+  },
+  {
+    "path": "third_party/bbh/cot-prompts/logical_deduction_five_objects.txt",
+    "url": "https://raw.githubusercontent.com/suzgunmirac/BIG-Bench-Hard/9ee07bd481feebf959a6b59d61ea57bdcf30964d/cot-prompts/logical_deduction_five_objects.txt",
+    "sha256": "4ed65246c0c1c4b0b4053d784181892b842bce19cf4358c976f34b1a434ef034"
+  },
+  {
+    "path": "third_party/bbh/cot-prompts/logical_deduction_seven_objects.txt",
+    "url": "https://raw.githubusercontent.com/suzgunmirac/BIG-Bench-Hard/9ee07bd481feebf959a6b59d61ea57bdcf30964d/cot-prompts/logical_deduction_seven_objects.txt",
+    "sha256": "4ed65246c0c1c4b0b4053d784181892b842bce19cf4358c976f34b1a434ef034"
+  },
+  {
+    "path": "third_party/bbh/cot-prompts/logical_deduction_three_objects.txt",
+    "url": "https://raw.githubusercontent.com/suzgunmirac/BIG-Bench-Hard/9ee07bd481feebf959a6b59d61ea57bdcf30964d/cot-prompts/logical_deduction_three_objects.txt",
+    "sha256": "4ed65246c0c1c4b0b4053d784181892b842bce19cf4358c976f34b1a434ef034"
+  },
+  {
+    "path": "third_party/bbh/cot-prompts/movie_recommendation.txt",
+    "url": "https://raw.githubusercontent.com/suzgunmirac/BIG-Bench-Hard/9ee07bd481feebf959a6b59d61ea57bdcf30964d/cot-prompts/movie_recommendation.txt",
+    "sha256": "cdf765634713b057091d541b4773dd2c998f81447b0bd8564ae70be4cdf3f5d0"
+  },
+  {
+    "path": "third_party/bbh/cot-prompts/ruin_names.txt",
+    "url": "https://raw.githubusercontent.com/suzgunmirac/BIG-Bench-Hard/9ee07bd481feebf959a6b59d61ea57bdcf30964d/cot-prompts/ruin_names.txt",
+    "sha256": "731446c6c66bb5258677af1417b599a6a5539be6d74a5afc02cf7a716444ea54"
+  },
+  {
+    "path": "third_party/bbh/cot-prompts/salient_translation_error_detection.txt",
+    "url": "https://raw.githubusercontent.com/suzgunmirac/BIG-Bench-Hard/9ee07bd481feebf959a6b59d61ea57bdcf30964d/cot-prompts/salient_translation_error_detection.txt",
+    "sha256": "2c8367f75092202cc507fdbfaaf037b1c1eed38e91289084439738367f0785f7"
+  },
+  {
+    "path": "third_party/bbh/cot-prompts/snarks.txt",
+    "url": "https://raw.githubusercontent.com/suzgunmirac/BIG-Bench-Hard/9ee07bd481feebf959a6b59d61ea57bdcf30964d/cot-prompts/snarks.txt",
+    "sha256": "35084a2a0b86bc4008ab206b838c0b97dd425897dd72198137c3cefc499c0960"
+  },
+  {
+    "path": "third_party/bbh/cot-prompts/sports_understanding.txt",
+    "url": "https://raw.githubusercontent.com/suzgunmirac/BIG-Bench-Hard/9ee07bd481feebf959a6b59d61ea57bdcf30964d/cot-prompts/sports_understanding.txt",
+    "sha256": "2058a9bed717a6edb8ca2f815e88851436a4ee14c8b0d504ccf464865c6d0295"
+  },
+  {
+    "path": "third_party/bbh/cot-prompts/tracking_shuffled_objects_five_objects.txt",
+    "url": "https://raw.githubusercontent.com/suzgunmirac/BIG-Bench-Hard/9ee07bd481feebf959a6b59d61ea57bdcf30964d/cot-prompts/tracking_shuffled_objects_five_objects.txt",
+    "sha256": "2ef54cb2a72052adc3484a76209cb6a6535f194d677e79bcec2e2e71cf3768af"
+  },
+  {
+    "path": "third_party/bbh/cot-prompts/tracking_shuffled_objects_seven_objects.txt",
+    "url": "https://raw.githubusercontent.com/suzgunmirac/BIG-Bench-Hard/9ee07bd481feebf959a6b59d61ea57bdcf30964d/cot-prompts/tracking_shuffled_objects_seven_objects.txt",
+    "sha256": "2ef54cb2a72052adc3484a76209cb6a6535f194d677e79bcec2e2e71cf3768af"
+  },
+  {
+    "path": "third_party/bbh/cot-prompts/tracking_shuffled_objects_three_objects.txt",
+    "url": "https://raw.githubusercontent.com/suzgunmirac/BIG-Bench-Hard/9ee07bd481feebf959a6b59d61ea57bdcf30964d/cot-prompts/tracking_shuffled_objects_three_objects.txt",
+    "sha256": "2ef54cb2a72052adc3484a76209cb6a6535f194d677e79bcec2e2e71cf3768af"
+  },
+  {
+    "path": "third_party/bbh/cot-prompts/web_of_lies.txt",
+    "url": "https://raw.githubusercontent.com/suzgunmirac/BIG-Bench-Hard/9ee07bd481feebf959a6b59d61ea57bdcf30964d/cot-prompts/web_of_lies.txt",
+    "sha256": "c8025ca65ab7f0897c243504c863bda043d04b6e873777536743e94023c929d0"
+  },
+  {
+    "path": "third_party/bbh/cot-prompts/word_sorting.txt",
+    "url": "https://raw.githubusercontent.com/suzgunmirac/BIG-Bench-Hard/9ee07bd481feebf959a6b59d61ea57bdcf30964d/cot-prompts/word_sorting.txt",
+    "sha256": "a2cdbcfe23abaa97b9787f7c03dbf49b1cfd0ff9e63197b7884bb5cd5a096ca6"
+  },
+  {
+    "path": "third_party/nltk_data/tokenizers/punkt_tab/english/sent_starters.txt",
+    "url": "https://raw.githubusercontent.com/nltk/nltk_data/550b6625bcef1f2abff2ff770a5a0d272c9c6b2a/packages/tokenizers/punkt_tab.zip",
+    "archive_member": "punkt_tab/english/sent_starters.txt",
+    "sha256": "f3f8535483e1dba487241b764945168123bca3209a9645e59acd1225dc76edac"
+  },
+  {
+    "path": "third_party/nltk_data/tokenizers/punkt_tab/english/abbrev_types.txt",
+    "url": "https://raw.githubusercontent.com/nltk/nltk_data/550b6625bcef1f2abff2ff770a5a0d272c9c6b2a/packages/tokenizers/punkt_tab.zip",
+    "archive_member": "punkt_tab/english/abbrev_types.txt",
+    "sha256": "92a3e070f43d9b4c5534758ca40ad7343b04e7e29bfe0c2eb658a39445a4f779"
+  },
+  {
+    "path": "third_party/nltk_data/tokenizers/punkt_tab/english/ortho_context.tab",
+    "url": "https://raw.githubusercontent.com/nltk/nltk_data/550b6625bcef1f2abff2ff770a5a0d272c9c6b2a/packages/tokenizers/punkt_tab.zip",
+    "archive_member": "punkt_tab/english/ortho_context.tab",
+    "sha256": "4bbcca25ed3d3f06c02402abf8419b9f033b8adc06e7b482eca4e45f81a5dc4c"
+  },
+  {
+    "path": "third_party/nltk_data/tokenizers/punkt_tab/english/collocations.tab",
+    "url": "https://raw.githubusercontent.com/nltk/nltk_data/550b6625bcef1f2abff2ff770a5a0d272c9c6b2a/packages/tokenizers/punkt_tab.zip",
+    "archive_member": "punkt_tab/english/collocations.tab",
+    "sha256": "8e2da1225e4dd2cc9dba261ee231ccb134859e21b46006e7f472c5ee269af0cf"
+  },
+  {
+    "path": "third_party/nltk_data/README.punkt_tab",
+    "url": "https://raw.githubusercontent.com/nltk/nltk_data/550b6625bcef1f2abff2ff770a5a0d272c9c6b2a/packages/tokenizers/punkt_tab.zip",
+    "archive_member": "punkt_tab/README",
+    "sha256": "d3251cae66a9359bd68c039e3a46172a05ca9df0b27dcdfa23ae594d68d27ec4"
+  }
+]
