@@ -86,7 +86,23 @@ Current pod: **RunPod PyTorch 2.8.0 template, 2 × RTX PRO 6000, 200 GB containe
 
 The [four-GPU variant](notebooks/evaluate_qwen25_3b_all9_transfer_runpod_4gpu.ipynb) remains available with `GPU_IDS = ["0", "1", "2", "3"]` and `/workspace/qwen-transfer` for a 200 GB persistent volume. Both variants use the same benchmark settings and exporter.
 
-Authorize a `gdrive:` rclone remote once using the notebook's terminal instructions, then set `COPY_FROM_DRIVE = True` to copy the seven selected checkpoints and their training manifests. Only inference files are copied; optimizer states and other epochs are excluded. Manual uploads to the displayed paths are also supported. The two pretrained models download from their pinned Hugging Face revisions. Run setup/preparation, optionally `RUN_SMOKE = True`, then `RUN_EVAL = True`.
+**Checkpoint transfer now uses Hugging Face.** First run [upload_qwen25_3b_7_checkpoints_to_hf.ipynb](notebooks/upload_qwen25_3b_7_checkpoints_to_hf.ipynb) in **CPU Colab**, with Drive mounted and a write-enabled `HF_TOKEN` in Secrets. It validates all seven selected checkpoints, uploads them to seven private model repositories, verifies Hub file checksums, and publishes an index of exact commit revisions. Full weights, saved tokenizer/chat template, EOS/PAD settings, checkpoint markers and training manifests are preserved. Optimizer states and other epochs are excluded. Uploads are enabled with `RUN_UPLOAD = True`; identical completed uploads are verified/reused on rerun. Source Drive files are unchanged. **Actual model uploads are pending notebook execution.**
+
+Default repositories (created when the Colab uploader runs; `HF_OWNER`, `HF_PRIVATE` and repository names are editable):
+
+| Variant | HF model repository |
+| --- | --- |
+| Base + RL step 300 | `Seungjun/qwen25-3b-base-rl-step300` |
+| Kimi SFT epoch 5 | `Seungjun/qwen25-3b-base-s1-kimi-sft-epoch5` |
+| Rejection SFT epoch 4 | `Seungjun/qwen25-3b-base-rejection-sft-epoch4` |
+| 7B-distillation SFT epoch 5 | `Seungjun/qwen25-3b-base-7b-distill-sft-epoch5` |
+| Rejection SFT epoch 4 + RL step 300 | `Seungjun/qwen25-3b-base-rejection-sft-epoch4-rl-step300` |
+| 7B-distillation SFT epoch 5 + RL step 300 | `Seungjun/qwen25-3b-base-7b-distill-sft-epoch5-rl-step300` |
+| Instruct + RL step 300 | `Seungjun/qwen25-3b-instruct-rl-step300` |
+
+Upload receipts are saved in `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/hf-checkpoint-upload/`: `uploaded_models.json` after each verified upload, `transfer_catalog.json` with the seven pinned revisions, and `upload_complete.json` after the full catalog is published and verified. The catalog is stored as `transfer_catalog.json` in the base + RL model repository, so no eighth repository is required.
+
+Then run the updated RunPod notebook. `HF_CATALOG_REPO` defaults to `Seungjun/qwen25-3b-base-rl-step300`; it resolves the catalog once and saves its immutable revision in `OUTPUT_ROOT/hf_checkpoint_catalog.json`. All seven checkpoints download automatically into the expected local folders, with checksums and restored training manifests; resumes keep using the pinned commits. No Google Drive authentication, rclone configuration or manual revision copying is needed on RunPod. B0 and I0 use their existing pinned public HF repositories. Run setup/preparation, optionally `RUN_SMOKE = True`, then `RUN_EVAL = True`. HF_TOKEN needs access to the private model repositories and write access for the final results export.
 
 | Artifact | RunPod path |
 | --- | --- |
@@ -98,7 +114,7 @@ Authorize a `gdrive:` rclone remote once using the notebook's terminal instructi
 | Coordinator log | `logs/runpod_eval_console.log` under the results root |
 | Per-model worker log | `models/<key>/logs/runpod_eval_console.log` under the results root |
 
-Scores, subject/task breakdowns and response journals follow the table above under this separate RunPod results root. `BACKUP_TO_DRIVE = True` optionally copies results to `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/eval-all9-transfer-runpod-temp0/` (the equivalent My Drive folder; Drive is not mounted on RunPod). Backup requires a write-authorized remote. No Pod is created or stopped automatically. Save results before deleting a Pod with only a Pod volume.
+Scores, subject/task breakdowns and response journals follow the table above under this separate RunPod results root. The final cell exports results to HF; manual Jupyter downloads remain possible. The previous rclone/Drive-copy and Drive-backup cells have been removed from both RunPod variants. No Pod is created or stopped automatically. Save results before stopping a container-only Pod or deleting a Pod with only a Pod volume.
 
 **Hugging Face export:** the final notebook cell defaults to `UPLOAD_TO_HF = True`, targeting the **private** dataset `Seungjun/qwen25-3b-transfer-eval-results` (`HF_REPO_ID` / `HF_PRIVATE` are editable). Supply a write-enabled `HF_TOKEN` at setup. After all selected full evaluations finish, it validates saved records against the raw response journals and reported metrics, then uploads compressed **Parquet inference records**, **CSV score tables**, and a generated **README dataset card** with overall scores, MMLU-Pro subjects, BBH tasks, IFEval metrics, checkpoints and protocol details. Parquet has one configuration per model, a `test` split, and full prompts/responses plus grading details. Data/runtime provenance and file checksums are included; weights, credentials and logs are excluded.
 

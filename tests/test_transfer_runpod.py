@@ -211,8 +211,10 @@ def test_self_contained_notebook_and_isolated_cli(tmp_path, monkeypatch, gpu_cou
         compile(source, 'runpod_notebook', 'exec')
     all_code = '\n'.join(sources)
     assert 'google.colab' not in all_code and 'drive.mount' not in all_code
-    for flag in ['COPY_FROM_DRIVE', 'RUN_SMOKE', 'RUN_EVAL', 'BACKUP_TO_DRIVE']:
+    for flag in ['RUN_SMOKE', 'RUN_EVAL']:
         assert flag + ' = False' in all_code
+    assert 'RCLONE_CONFIG' not in all_code and 'copy_checkpoints(' not in all_code
+    assert 'download_checkpoints(' in all_code and 'HF_CATALOG_REPO' in all_code
     settings = {}
     exec(sources[0], settings)
     assert settings['GPU_IDS'] == list(map(str, range(gpu_count)))

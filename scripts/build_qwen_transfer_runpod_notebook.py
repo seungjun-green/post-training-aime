@@ -10,7 +10,7 @@ from eval.run_transfer_eval import bundle_files
 NAME = 'evaluate_qwen25_3b_all9_transfer_runpod_2gpu.ipynb'
 FOUR_GPU_NAME = 'evaluate_qwen25_3b_all9_transfer_runpod_4gpu.ipynb'
 EXTRA_FILES = ['eval/run_transfer_runpod.py', 'eval/runpod_transfer_storage.py',
-               'eval/export_transfer_results.py']
+               'eval/export_transfer_results.py', 'eval/transfer_hub.py', 'configs/qwen_transfer_hub.yaml']
 
 
 def cells(gpu_count=2, storage_root=None):
@@ -55,7 +55,8 @@ def cells(gpu_count=2, storage_root=None):
         to install CUDA 13.2 wheels; setup validates actual CUDA execution on every selected GPU.
 
         Code and official scoring resources are embedded. No GitHub checkout or training.
-        No Pod is created, stopped or terminated automatically.
+        No Pod is created, stopped or terminated automatically. Trained weights download
+        from Hugging Face after the one-time Colab upload notebook has completed.
         The final cell exports completed inference records to Parquet, score tables to CSV,
         and publishes them with a dataset README to Hugging Face. Set a write-enabled
         `HF_TOKEN` at setup; repository ID, visibility and upload switch are editable below.
@@ -71,14 +72,14 @@ def cells(gpu_count=2, storage_root=None):
         GPU_IDS = {json.dumps([str(i) for i in range(gpu_count)])}
         MODEL_KEYS = None  # Default: all nine. Or e.g. ["base", "instruct"].
         CONFIG = "configs/qwen_transfer_eval.yaml"
-        RCLONE_REMOTE = "gdrive:"  # Named remote rooted at My Drive.
-        RCLONE_CONFIG = str(STORAGE_ROOT / "secrets/rclone.conf")
+        HF_CATALOG_REPO = "Seungjun/qwen25-3b-base-rl-step300"
+        HF_CATALOG_REVISION = "main"  # Resolved once, then pinned locally for every resume.
         HF_REPO_ID = "Seungjun/qwen25-3b-transfer-eval-results"
         HF_PRIVATE = True
         UPLOAD_TO_HF = True  # Final cell uploads only after all selected full runs finish.
         '''),
         code('''
-        import os, sys, subprocess, json, shutil, getpass
+        import os, sys, subprocess, json, getpass
         STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
         # Keep all large package/model downloads on the selected 200 GB filesystem.
         for variable, directory in {
@@ -89,17 +90,16 @@ def cells(gpu_count=2, storage_root=None):
             path = STORAGE_ROOT / directory
             path.mkdir(parents=True, exist_ok=True)
             os.environ[variable] = str(path)
-        os.environ["RCLONE_CONFIG"] = RCLONE_CONFIG
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
         if not os.environ.get("HF_TOKEN"):
             token = getpass.getpass("HF token (hidden; write access required for final HF upload): ").strip()
             if token:
                 os.environ["HF_TOKEN"] = token
             del token
-        if UPLOAD_TO_HF and not os.environ.get("HF_TOKEN"):
-            raise ValueError("Supply a write-enabled HF_TOKEN, or set UPLOAD_TO_HF = False for local export only.")
+        if not os.environ.get("HF_TOKEN"):
+            raise ValueError("Supply HF_TOKEN with access to the private checkpoint repositories; use write access for final results upload.")
         # Small bootstrap only; torch/vLLM are installed into EVAL_ENV later.
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "uv==0.11.22", "PyYAML==6.0.3"])
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "uv==0.11.22", "PyYAML==6.0.3", "huggingface-hub==0.36.2"])
         print("Workspace:", STORAGE_ROOT)
         '''),
         code(f'''
@@ -112,54 +112,34 @@ def cells(gpu_count=2, storage_root=None):
         sys.path.insert(0, str(CODE_ROOT))
         from common.process import run_logged
         from eval.run_transfer_eval import load_config
-        from eval.runpod_transfer_storage import check_space, gpu_inventory, drive_copy_plan, copy_checkpoints
+        from eval.runpod_transfer_storage import check_space, gpu_inventory
+        from eval.transfer_hub import download_checkpoints
         config = load_config(CODE_ROOT / CONFIG)
         print("GPUs:", gpu_inventory(GPU_IDS))
         print("Storage:", check_space(STORAGE_ROOT))
         '''),
         markdown('''
-        ## Bring the seven selected checkpoints from Drive
+        ## Download the seven trained checkpoints from Hugging Face
 
-        Two pretrained models download directly from their pinned Hugging Face revisions.
-        The seven trained checkpoints must be copied from your Drive (or uploaded manually).
-        The next cells generate the exact copy plan, including each required training
-        `run_manifest.json`. They exclude optimizer, scheduler, RNG files and earlier epochs.
+        **First run `upload_qwen25_3b_7_checkpoints_to_hf.ipynb` in CPU Colab** and wait
+        for all seven checkpoint uploads to be verified. The default private repositories
+        and catalog match that uploader. This RunPod notebook needs only HF_TOKEN;
+        no Drive mount, rclone or Google OAuth configuration.
 
-        **One-time Drive authorization:** the setup cell installs `rclone` from Ubuntu's
-        signed package repository if needed. In a **Jupyter terminal**, run the command
-        it prints, create a remote named `gdrive`, choose Google Drive and read-only scope.
-        On a headless Pod, choose browser authentication on another machine using the
-        [rclone remote-setup instructions](https://rclone.org/remote_setup/).
-        Store OAuth credentials only in `RCLONE_CONFIG`; do not paste them into notebook cells.
-        An existing authorized rclone config can also be uploaded to that path.
-
-        If checkpoints are already copied into the displayed local paths, leave
-        `COPY_FROM_DRIVE = False`. Otherwise finish authorization, set it to `True`, and
-        run the copy cell. Copies are one-way and do not alter/delete Drive originals.
+        The catalog pins the exact model commit revisions. RunPod resolves its revision
+        once and saves it in `OUTPUT_ROOT/hf_checkpoint_catalog.json`; resumes reuse
+        those pinned commits even if the Hub's main branch changes. Downloads go directly
+        into the evaluator's expected local folders, and the original training manifests
+        are restored next to them. SHA-256 checks and all native-tokenizer checks remain.
+        Original B0/I0 download from their existing pinned HF repositories later.
         '''),
         code('''
-        plan = drive_copy_plan(config, STORAGE_ROOT, RCLONE_REMOTE, MODEL_KEYS)
-        for item in plan:
-            print(item["key"], "=>", item["destination"])
-            print("  manifest:", item["manifest_destination"])
-        # Optional utility; skip this cell if rclone is installed or files were uploaded manually.
-        if shutil.which("rclone") is None:
-            subprocess.check_call(["apt-get", "update", "-qq"])
-            subprocess.check_call(["apt-get", "install", "-y", "--no-install-recommends", "rclone"])
-        Path(RCLONE_CONFIG).parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        import shlex
-        print("Authorize in a Jupyter terminal:")
-        print("rclone config --config " + shlex.quote(RCLONE_CONFIG))
-        '''),
-        code('''
-        COPY_FROM_DRIVE = False
-        if COPY_FROM_DRIVE:
-            if not Path(RCLONE_CONFIG).is_file():
-                raise FileNotFoundError("Configure the gdrive remote first: " + RCLONE_CONFIG)
-            Path(RCLONE_CONFIG).chmod(0o600)
-            copy_checkpoints(config, STORAGE_ROOT, RCLONE_REMOTE, selected=MODEL_KEYS)
-        else:
-            print("Drive copy disabled. The next cell validates the required local checkpoint files.")
+        checkpoint_paths = download_checkpoints(
+            config, STORAGE_ROOT, EXPERIMENT_ROOT, INSTRUCT_RL_ROOT, OUTPUT_ROOT,
+            HF_CATALOG_REPO, catalog_revision=HF_CATALOG_REVISION,
+            selected=MODEL_KEYS, token=os.environ["HF_TOKEN"])
+        for path in checkpoint_paths:
+            print("Checkpoint ready:", path)
         '''),
         markdown('''
         ## Validate local checkpoints and install the isolated evaluation runtime
@@ -261,29 +241,16 @@ def cells(gpu_count=2, storage_root=None):
         `models/<key>/logs/runpod_eval_console.log` contains detailed worker diagnostics.
         `logs/runpod_eval_console.log` contains coordinator output.
 
-        The next cell only reads results. After full evaluation is finished or stopped,
-        optionally copy results back to a **new** Drive folder. Copying never deletes
-        Drive files, and the source contains only evaluation artifacts, not model weights
-        or OAuth credentials. A read-only Drive remote must be reauthorized with write
-        access if you choose to enable backup. Alternatively download artifacts through
-        Jupyter or use your persistent network volume. Copy container-disk results out
-        before stopping/restarting the Pod; preserve Pod-volume results before deleting it.
+        The next cell reads saved results. The final section exports them to Hugging Face.
+        You can also download artifacts through Jupyter or keep them on a persistent
+        network volume. Copy container-disk results out before stopping/restarting the
+        Pod; preserve Pod-volume results before deleting it.
         '''),
         code('''
         show_results()
         status_path = Path(OUTPUT_ROOT) / "runpod_status.json"
         if status_path.is_file():
             print(json.dumps(json.loads(status_path.read_text()), indent=2))
-        '''),
-        code('''
-        BACKUP_TO_DRIVE = False
-        DRIVE_RESULT_FOLDER = RCLONE_REMOTE + "LG-AIME-Qwen25-3B-Experiments/eval-all9-transfer-runpod-temp0"
-        if BACKUP_TO_DRIVE:
-            subprocess.check_call(["rclone", "copy", OUTPUT_ROOT, DRIVE_RESULT_FOLDER,
-                                   "--exclude", "*.lock", "--exclude", "*.tmp", "--stats", "30s"])
-            print("Results copied to:", DRIVE_RESULT_FOLDER)
-        else:
-            print("Optional Drive backup disabled. Local results:", OUTPUT_ROOT)
         '''),
         markdown('''
         ## Publish inference outputs and result tables to Hugging Face

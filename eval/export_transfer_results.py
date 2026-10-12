@@ -198,8 +198,9 @@ def build_export(config, output_root, repo_id, selected=None):
             write_json(payload / 'provenance/data_manifest.json', data)
             for name in ['TRANSFER_NOTICE.md', 'transfer_sources.json']:
                 shutil.copyfile(ROOT / 'third_party' / name, payload / 'provenance' / name)
-            if (root / 'runpod_protocol.json').is_file():
-                shutil.copyfile(root / 'runpod_protocol.json', payload / 'provenance/runpod_protocol.json')
+            for name in ['runpod_protocol.json', 'hf_checkpoint_catalog.json']:
+                if (root / name).is_file():
+                    shutil.copyfile(root / name, payload / 'provenance' / name)
             hashes = {p.relative_to(payload).as_posix(): file_hash(p) for p in sorted(payload.rglob('*')) if p.is_file()}
             record = {'format': FORMAT, 'models': keys, 'counts': counts, 'files': hashes}
             run_id = digest(record)[:20]

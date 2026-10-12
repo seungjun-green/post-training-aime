@@ -1,0 +1,12 @@
+version: qwen-transfer-hub-v1
+private: true
+catalog_key: base_rl
+catalog_filename: transfer_catalog.json
+repositories:
+  base_rl: Seungjun/qwen25-3b-base-rl-step300
+  kimi_sft: Seungjun/qwen25-3b-base-s1-kimi-sft-epoch5
+  rejection_sft: Seungjun/qwen25-3b-base-rejection-sft-epoch4
+  distill_sft: Seungjun/qwen25-3b-base-7b-distill-sft-epoch5
+  rejection_rl: Seungjun/qwen25-3b-base-rejection-sft-epoch4-rl-step300
+  distill_rl: Seungjun/qwen25-3b-base-7b-distill-sft-epoch5-rl-step300
+  instruct_rl: Seungjun/qwen25-3b-instruct-rl-step300

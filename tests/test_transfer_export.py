@@ -37,9 +37,11 @@ def test_export_parquet_roundtrip_tables_card_and_deterministic_resume(completed
     config, root = completed
     # Nearby secrets, models and logs must never enter the allowlisted export.
     (root / 'secret.env').write_text('DO_NOT_UPLOAD')
+    write_json(root / 'hf_checkpoint_catalog.json', {'repo_id': 'Seungjun/catalog', 'revision': 'a' * 40})
     folder = build_export(config, root, 'Seungjun/test-results', ['base'])
     marker = json.loads((folder / 'transfer_export.json').read_text())
     snapshot = folder / 'runs' / marker['run_id']
+    assert (snapshot / 'provenance/hf_checkpoint_catalog.json').read_text() == (root / 'hf_checkpoint_catalog.json').read_text()
     rows = [row for p in sorted((snapshot / 'data/base').glob('*.parquet')) for row in pq.read_table(p).to_pylist()]
     assert len(rows) == 4
     assert len({r['example_id'] for r in rows}) == 4
