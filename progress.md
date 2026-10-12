@@ -80,6 +80,10 @@ Model keys: `base`, `base_rl`, `kimi_sft`, `rejection_sft`, `distill_sft`, `reje
 
 ### RunPod: two or four RTX PRO 6000 GPUs
 
+**Updated MMLU-Pro protocol:** both RunPod variants use a custom subset of **100 test questions per subject × 14 subjects = 1,400**, seed **42**, selected by deterministic SHA-256 ranking of IDs (`configs/qwen_transfer_eval_mmlu100.yaml`). The same IDs are used for all nine models and saved by subject in `data/manifest.json`; the five validation demonstrations per subject are unchanged. Other benchmark counts stay unchanged: **7,728 prompts/model; 69,552 across nine models**. HF result cards explicitly label the custom subset. The Colab configuration retains full MMLU-Pro.
+
+The subset uses a new output folder, `eval-all9-transfer-mmlu100-seed42-temp0`, separate from previous full-run journals. Stop the old evaluation, restart the kernel, then run the updated notebook from the top; existing checkpoint files and download caches are reused. Setup disables the optional `hf_transfer` backend both in the already-imported notebook kernel and via the environment inherited by evaluation subprocesses, avoiding missing-package errors on RunPod images.
+
 Current pod notebook: [evaluate_qwen25_3b_all9_transfer_runpod_2gpu.ipynb](notebooks/evaluate_qwen25_3b_all9_transfer_runpod_2gpu.ipynb). **Ready; GPU execution/results pending.** Uses the same nine checkpoints, benchmark prompts, scorers, temperature **0** and **4,096** new-token cap. A dynamic queue evaluates two models concurrently on the current pod, one per GPU (tensor parallel size 1); each free GPU takes the next model. Completed responses are saved immediately and reused on resume. Workers have separate logs/journals; the coordinator updates the combined tables after each model.
 
 Current pod: **RunPod PyTorch 2.8.0 template, 2 × RTX PRO 6000, 200 GB container disk**, reported by the user. The two-GPU notebook defaults to `GPU_IDS = ["0", "1"]` and `STORAGE_ROOT = /root/qwen-transfer`, so downloads use the enlarged container filesystem rather than a potentially separate smaller `/workspace` volume. The notebook installs the existing pinned **Python 3.12 / PyTorch 2.9.1 / vLLM 0.14.1** evaluation environment separately and verifies CUDA execution on each selected GPU. The template's PyTorch installation remains intact. Actual free-space checks run before checkpoint downloads. **Container-disk files are lost on Pod stop/restart: complete the HF upload or copy results out first.** See [RunPod storage](https://docs.runpod.io/pods/storage/types).
@@ -109,7 +113,7 @@ Then run the updated RunPod notebook. `HF_CATALOG_REPO` defaults to `Seungjun/qw
 | Experiment checkpoint tree | `/root/qwen-transfer/models/LG-AIME-Qwen25-3B-Experiments/` |
 | Instruct + RL checkpoint tree | `/root/qwen-transfer/models/LG-AIME-DAPO-Qwen25-3B-MiniBatch300-MemoryFix/` |
 | Isolated evaluation environment | `/root/qwen-transfer/envs/eval/` |
-| Results root | `/root/qwen-transfer/results/eval-all9-transfer-temp0/` |
+| Results root | `/root/qwen-transfer/results/eval-all9-transfer-mmlu100-seed42-temp0/` |
 | Aggregate progress | `runpod_status.json` under the results root |
 | Coordinator log | `logs/runpod_eval_console.log` under the results root |
 | Per-model worker log | `models/<key>/logs/runpod_eval_console.log` under the results root |
@@ -118,7 +122,7 @@ Scores, subject/task breakdowns and response journals follow the table above und
 
 **Hugging Face export:** the final notebook cell defaults to `UPLOAD_TO_HF = True`, targeting the **private** dataset `Seungjun/qwen25-3b-transfer-eval-results` (`HF_REPO_ID` / `HF_PRIVATE` are editable). Supply a write-enabled `HF_TOKEN` at setup. After all selected full evaluations finish, it validates saved records against the raw response journals and reported metrics, then uploads compressed **Parquet inference records**, **CSV score tables**, and a generated **README dataset card** with overall scores, MMLU-Pro subjects, BBH tasks, IFEval metrics, checkpoints and protocol details. Parquet has one configuration per model, a `test` split, and full prompts/responses plus grading details. Data/runtime provenance and file checksums are included; weights, credentials and logs are excluded.
 
-Local exports: `/root/qwen-transfer/results/eval-all9-transfer-temp0/hf_exports/<export-id>/`. Hub snapshots: `runs/<export-id>/`; previous snapshots are retained, and the root README points to the latest export. Set `UPLOAD_TO_HF = False` for local export only. If uploading fails, rerun only the final cell after correcting the token/settings; no inference is repeated. Incomplete or smoke-only runs cannot publish. **Actual Hub upload is pending notebook execution.**
+Local exports: `/root/qwen-transfer/results/eval-all9-transfer-mmlu100-seed42-temp0/hf_exports/<export-id>/`. Hub snapshots: `runs/<export-id>/`; previous snapshots are retained, and the root README points to the latest export. Set `UPLOAD_TO_HF = False` for local export only. If uploading fails, rerun only the final cell after correcting the token/settings; no inference is repeated. Incomplete or smoke-only runs cannot publish. **Actual Hub upload is pending notebook execution.**
 
 ## Dataset creation
 

@@ -45,6 +45,14 @@ def result_card(config, summary, run_id, repo_id, counts):
     text += '# Qwen2.5-3B transfer evaluation results\n\n'
     text += (f'Completed **{len(keys)} models**, **{sum(counts.values()):,} inference records**. '
              f'Export `{run_id}`. This repository contains evaluation outputs, not training data.\n\n')
+    selection = config.get('mmlu_selection')
+    if selection is not None:
+        text += (f'**MMLU-Pro: {selection["per_subject"]} questions per subject '
+                 f'({selection["per_subject"] * len(config["mmlu_subjects"]):,} total), custom subset.** '
+                 f'Seed **{selection["seed"]}**, method `{selection["method"]}`; identical question IDs '
+                 'across all models, selected before inference without consulting answers or model results. '
+                 'The data manifest lists selected IDs by subject. These are subset scores, not full '
+                 'MMLU-Pro scores; small per-subject differences have greater sampling uncertainty.\n\n')
     text += '## Overall results\n\n' + markdown_table(summary['rows']) + '\n\n'
     for benchmark, title in [('arc_challenge', 'ARC-Challenge'), ('mmlu_pro', 'MMLU-Pro subjects and aggregates'),
                              ('bbh_nonmath', 'Non-math BBH tasks and aggregates'), ('ifeval', 'IFEval')]:

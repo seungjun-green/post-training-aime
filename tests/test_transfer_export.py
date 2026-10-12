@@ -7,7 +7,7 @@ import yaml
 from test_transfer_eval import Tokenizer, tiny_sources
 
 from common.io import read_jsonl, write_json, write_jsonl
-from eval.export_transfer_results import FORMAT, build_export, publish_export
+from eval.export_transfer_results import FORMAT, build_export, publish_export, result_card
 from eval.run_transfer_eval import run_model
 from eval.run_transfer_runpod import exclusive
 from eval.transfer_data import prepare_data
@@ -65,6 +65,16 @@ def test_export_parquet_roundtrip_tables_card_and_deterministic_resume(completed
     assert (snapshot / 'tables/comparison.csv').read_text() == (root / 'comparison.csv').read_text()
     assert build_export(config, root, 'Seungjun/test-results', ['base']) == folder
     assert not any('secret' in p.name or 'console' in p.name for p in folder.rglob('*'))
+
+
+def test_result_card_identifies_custom_mmlu_subset():
+    config, _ = tiny_sources()
+    config['mmlu_selection'] = {'method': 'sha256_id_rank_v1', 'per_subject': 100, 'seed': 42}
+    card = result_card(config, {'rows': [{'Key': 'base'}], 'breakdowns': []},
+                       'test-run', 'Seungjun/test', {'base': 103})
+    assert '100 questions per subject (100 total), custom subset' in card
+    assert 'Seed **42**' in card and 'sha256_id_rank_v1' in card
+    assert 'not full MMLU-Pro scores' in card
 
 
 @pytest.mark.parametrize('change', ['missing', 'duplicate', 'score', 'document', 'response', 'smoke'])

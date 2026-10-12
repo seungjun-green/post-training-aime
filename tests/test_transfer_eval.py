@@ -15,7 +15,7 @@ import pytest
 
 from common.io import append_jsonl, digest, read_jsonl, write_json
 from eval.run_transfer_eval import bundle_files, comparison, load_config, run_model
-from eval.transfer_data import prepare_data, smoke_documents
+from eval.transfer_data import prepare_data, select_mmlu_rows, smoke_documents
 from eval.transfer_models import model_fingerprint, prepare_models, validate_checkpoint
 from eval.transfer_scoring import bbh_answer, choice_answer, ifeval_scores, summarize
 
@@ -82,6 +82,57 @@ def tiny_sources():
         key = next(k for k, v in config['sources'].items() if v is source)
         return copy.deepcopy(source_rows[key])
     return config, loader
+
+
+def test_mmlu_subset_balanced_reproducible_and_auditable(tmp_path):
+    full_config = load_config(CONFIG)
+    subset_config = load_config(ROOT / 'configs/qwen_transfer_eval_mmlu100.yaml')
+    assert {k: v for k, v in subset_config.items() if k not in {'version', 'mmlu_selection'}} == {
+        k: v for k, v in full_config.items() if k != 'version'}
+    config, original_loader = tiny_sources()
+    config['mmlu_subjects'] = subset_config['mmlu_subjects']
+    config['mmlu_selection'] = subset_config['mmlu_selection']
+    test_row = original_loader(config['sources']['mmlu_test'])[0]
+    demo = original_loader(config['sources']['mmlu_validation'])[0]
+    rows = [{**test_row, 'question_id': f'{subject}-{i}', 'category': subject}
+            for subject in config['mmlu_subjects'] for i in range(120)]
+    config['sources']['mmlu_test']['rows'] = len(rows)
+    config['sources']['mmlu_validation']['rows'] = 70
+
+    def loader(source):
+        if source is config['sources']['mmlu_test']:
+            return rows
+        if source is config['sources']['mmlu_validation']:
+            return [{**demo, 'category': subject} for subject in config['mmlu_subjects'] for _ in range(5)]
+        return original_loader(source)
+
+    docs, manifest = prepare_data(config, tmp_path, loader)
+    assert manifest['counts'] == {'arc_challenge': 1, 'mmlu_pro': 1400, 'bbh_nonmath': 1, 'ifeval': 1}
+    selected = manifest['mmlu_selection']['selected_ids_by_subject']
+    assert set(selected) == set(config['mmlu_subjects'])
+    assert all(len(set(ids)) == 100 for ids in selected.values())
+    assert len({doc['id'] for doc in docs}) == len(docs)
+    assert not any('SECRET TEST REASONING' in d['prompt'] for d in docs)
+    assert all(d['prompt'].count('Demo question') == 5 for d in docs if d['benchmark'] == 'mmlu_pro')
+    assert prepare_data(config, tmp_path, loader) == (docs, manifest)
+    assert select_mmlu_rows(rows, config) == select_mmlu_rows(list(reversed(rows)), config)
+    different_seed = copy.deepcopy(config)
+    different_seed['mmlu_selection']['seed'] += 1
+    assert select_mmlu_rows(rows, config) != select_mmlu_rows(rows, different_seed)
+    with pytest.raises(ValueError, match='new OUTPUT_ROOT'):
+        prepare_data(different_seed, tmp_path, loader)
+    full = dict(config)
+    del full['mmlu_selection']
+    full_docs, full_manifest = prepare_data(full, tmp_path / 'full', loader)
+    assert full_manifest['counts']['mmlu_pro'] == len(rows)
+    assert [d for d in full_docs if d['benchmark'] != 'mmlu_pro'] == [
+        d for d in docs if d['benchmark'] != 'mmlu_pro']
+    with pytest.raises(ValueError, match='new OUTPUT_ROOT'):
+        prepare_data(config, tmp_path / 'full', loader)
+    with pytest.raises(ValueError, match='Not enough'):
+        select_mmlu_rows(rows[:1], config)
+    with pytest.raises(ValueError, match='Duplicate'):
+        select_mmlu_rows(rows + rows[:1], config)
 
 
 def test_data_prompts_pinning_resume_and_smoke(tmp_path):

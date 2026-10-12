@@ -218,6 +218,9 @@ def test_self_contained_notebook_and_isolated_cli(tmp_path, monkeypatch, gpu_cou
     settings = {}
     exec(sources[0], settings)
     assert settings['GPU_IDS'] == list(map(str, range(gpu_count)))
+    assert settings['OUTPUT_ROOT'].endswith('/results/eval-all9-transfer-mmlu100-seed42-temp0')
+    assert settings['CONFIG'] == 'configs/qwen_transfer_eval_mmlu100.yaml'
+    assert load_config(ROOT / settings['CONFIG'])['mmlu_selection']['per_subject'] == 100
     assert str(settings['STORAGE_ROOT']) == ('/root/qwen-transfer' if gpu_count == 2 else '/workspace/qwen-transfer')
     source = next(s for s in sources if 'BUNDLE = ' in s)
     node = next(n for n in ast.parse(source).body if isinstance(n, ast.Assign)
@@ -233,3 +236,21 @@ def test_self_contained_notebook_and_isolated_cli(tmp_path, monkeypatch, gpu_cou
         result = subprocess.run([sys.executable, '-m', module, '--help'], cwd=tmp_path,
                                 check=True, capture_output=True, text=True)
         assert '--output-root' in result.stdout
+
+
+def test_bootstrap_disables_hf_transfer_in_loaded_kernel_and_children(monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / 'scripts'))
+    from build_qwen_transfer_runpod_notebook import cells
+    bootstrap = next(c.source for c in cells() if 'import os, sys, subprocess' in c.source)
+    # Run the actual backend-setting statements without package installs or token prompts.
+    statements = [n for n in ast.parse(bootstrap).body
+                  if (isinstance(n, ast.Assign) and 'HF_HUB_ENABLE_HF_TRANSFER' in ast.unparse(n))
+                  or (isinstance(n, ast.ImportFrom) and n.module == 'huggingface_hub')]
+    script = ('import os, subprocess, sys\nfrom huggingface_hub import constants\n'
+              'os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"\n'
+              'constants.HF_HUB_ENABLE_HF_TRANSFER = True\n')
+    script += '\n'.join(ast.unparse(n) for n in statements)
+    script += ('\nassert constants.HF_HUB_ENABLE_HF_TRANSFER is False\n'
+               'subprocess.run([sys.executable, "-c", '
+               '"from huggingface_hub import constants; assert not constants.HF_HUB_ENABLE_HF_TRANSFER"], check=True)\n')
+    subprocess.run([sys.executable, '-c', script], check=True, capture_output=True)

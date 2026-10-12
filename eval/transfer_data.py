@@ -37,6 +37,37 @@ def mmlu_example(row, *, answer=False):
     return text + "Answer: Let's think step by step."
 
 
+def select_mmlu_rows(rows, config):
+    """Seeded sampling by ID, independent of model, source order and answer content."""
+    selection = config.get('mmlu_selection')
+    if selection is None:
+        return rows
+    if (selection.get('method') != 'sha256_id_rank_v1'
+            or type(selection.get('per_subject')) is not int or selection['per_subject'] <= 0
+            or type(selection.get('seed')) is not int):
+        raise ValueError('Invalid MMLU-Pro sampling settings')
+    subjects = config['mmlu_subjects']
+    if len(set(subjects)) != len(subjects):
+        raise ValueError('Duplicate MMLU-Pro subjects')
+    groups = {subject: [] for subject in subjects}
+    ids = set()
+    for row in rows:
+        key = str(row['question_id'])
+        if key in ids or row['category'] not in groups:
+            raise ValueError('Duplicate MMLU-Pro ID or unknown subject')
+        ids.add(key)
+        groups[row['category']].append(row)
+    selected = []
+    for subject, candidates in groups.items():
+        if len(candidates) < selection['per_subject']:
+            raise ValueError(f'Not enough MMLU-Pro questions for {subject}')
+        # SHA-256 ranking gives a reproducible sample without depending on RNG versions.
+        def rank(row):
+            return (digest([selection['seed'], subject, str(row['question_id'])]), str(row['question_id']))
+        selected.extend(sorted(candidates, key=rank)[:selection['per_subject']])
+    return selected
+
+
 def make_documents(config, loader=fetch_rows):
     docs = []
     for row in loader(config['sources']['arc']):
@@ -58,7 +89,7 @@ def make_documents(config, loader=fetch_rows):
             raise ValueError(f'Expected exactly five MMLU-Pro validation examples: {subject}')
         prefixes[subject] = initial.replace('{$}', subject) + '\n' + ''.join(
             mmlu_example(r, answer=True) for r in examples)
-    for row in loader(config['sources']['mmlu_test']):
+    for row in select_mmlu_rows(loader(config['sources']['mmlu_test']), config):
         subject = row['category']
         if subject not in prefixes or row['answer'] != chr(65 + row['answer_index']):
             raise ValueError('Invalid MMLU-Pro subject/answer')
@@ -121,11 +152,19 @@ def prepare_data(config, output_root, loader=fetch_rows):
                 'mmlu_pro': config['sources']['mmlu_test']['rows'],
                 'bbh_nonmath': sum(config['sources']['bbh/' + t]['rows'] for t in config['bbh_tasks']),
                 'ifeval': config['sources']['ifeval']['rows']}
+    if config.get('mmlu_selection') is not None:
+        expected['mmlu_pro'] = config['mmlu_selection']['per_subject'] * len(config['mmlu_subjects'])
     if counts != expected:
         raise ValueError(f'Incomplete benchmark selection: {counts}')
     manifest = {'identity': identity, 'documents_digest': digest(docs), 'counts': counts,
                 'sources': config['sources'], 'bbh_tasks': config['bbh_tasks'],
                 'bbh_excluded': config['bbh_excluded'], 'mmlu_subjects': config['mmlu_subjects']}
+    if config.get('mmlu_selection') is not None:
+        manifest['mmlu_selection'] = {
+            **config['mmlu_selection'],
+            'selected_ids_by_subject': {
+                subject: [d['id'] for d in docs if d['benchmark'] == 'mmlu_pro' and d['subject'] == subject]
+                for subject in config['mmlu_subjects']}}
     write_jsonl(path, docs)
     write_json(manifest_path, manifest)
     return docs, manifest

@@ -10,7 +10,8 @@ from eval.run_transfer_eval import bundle_files
 NAME = 'evaluate_qwen25_3b_all9_transfer_runpod_2gpu.ipynb'
 FOUR_GPU_NAME = 'evaluate_qwen25_3b_all9_transfer_runpod_4gpu.ipynb'
 EXTRA_FILES = ['eval/run_transfer_runpod.py', 'eval/runpod_transfer_storage.py',
-               'eval/export_transfer_results.py', 'eval/transfer_hub.py', 'configs/qwen_transfer_hub.yaml']
+               'eval/export_transfer_results.py', 'eval/transfer_hub.py', 'configs/qwen_transfer_hub.yaml',
+               'configs/qwen_transfer_eval_mmlu100.yaml']
 
 
 def cells(gpu_count=2, storage_root=None):
@@ -34,9 +35,18 @@ def cells(gpu_count=2, storage_root=None):
         # All nine Qwen2.5-3B variants — RunPod · {gpu_count} × RTX PRO 6000 96 GB
 
         **ARC-Challenge, MMLU-Pro subject breakdowns, non-math BBH, IFEval**.
-        Temperature **0**, one response, **4,096 new-token cap**. Same datasets,
-        prompts, scoring and selected checkpoints as the Colab transfer notebook.
-        **18,360 prompts/model; 165,240 across nine models**.
+        Temperature **0**, one response, **4,096 new-token cap**. MMLU-Pro uses a
+        **custom subset: 100 questions per subject × 14 subjects = 1,400 questions**.
+        Fixed seed **42**, deterministic SHA-256 ranking of question IDs within each
+        subject, identical selected questions for all nine models. The five official
+        validation demonstrations per subject remain unchanged. All other benchmarks,
+        prompts, scoring and selected checkpoints match the Colab transfer notebook.
+        **7,728 prompts/model; 69,552 across nine models**.
+
+        This subset has its own output folder. Stop the old full evaluation and restart
+        the notebook kernel before running this updated notebook from the top. Existing
+        weights and download caches are reused; previous full-run journals are kept
+        separately and are not resumed into this different protocol.
 
         A dynamic queue runs **one complete model evaluation per GPU**, up to {gpu_count}
         models at once. Every worker uses tensor parallel size 1; a free GPU takes the
@@ -61,17 +71,18 @@ def cells(gpu_count=2, storage_root=None):
         and publishes them with a dataset README to Hugging Face. Set a write-enabled
         `HF_TOKEN` at setup; repository ID, visibility and upload switch are editable below.
         '''),
-        original[1],
+        markdown(original[1].source.replace('| MMLU-Pro | 12,032 |',
+                 '| MMLU-Pro (custom: 100/subject, seed 42) | 1,400 |')),
         code(f'''
         from pathlib import Path
         STORAGE_ROOT = Path({storage_root!r})
         EXPERIMENT_ROOT = str(STORAGE_ROOT / "models/LG-AIME-Qwen25-3B-Experiments")
         INSTRUCT_RL_ROOT = str(STORAGE_ROOT / "models/LG-AIME-DAPO-Qwen25-3B-MiniBatch300-MemoryFix")
-        OUTPUT_ROOT = str(STORAGE_ROOT / "results/eval-all9-transfer-temp0")
+        OUTPUT_ROOT = str(STORAGE_ROOT / "results/eval-all9-transfer-mmlu100-seed42-temp0")
         EVAL_ENV = str(STORAGE_ROOT / "envs/eval")
         GPU_IDS = {json.dumps([str(i) for i in range(gpu_count)])}
         MODEL_KEYS = None  # Default: all nine. Or e.g. ["base", "instruct"].
-        CONFIG = "configs/qwen_transfer_eval.yaml"
+        CONFIG = "configs/qwen_transfer_eval_mmlu100.yaml"
         HF_CATALOG_REPO = "Seungjun/qwen25-3b-base-rl-step300"
         HF_CATALOG_REVISION = "main"  # Resolved once, then pinned locally for every resume.
         HF_REPO_ID = "Seungjun/qwen25-3b-transfer-eval-results"
@@ -80,6 +91,9 @@ def cells(gpu_count=2, storage_root=None):
         '''),
         code('''
         import os, sys, subprocess, json, getpass
+        # Some RunPod images enable hf_transfer without installing it. Disable the
+        # optional backend here; every evaluation subprocess inherits this setting.
+        os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
         STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
         # Keep all large package/model downloads on the selected 200 GB filesystem.
         for variable, directory in {
@@ -100,6 +114,9 @@ def cells(gpu_count=2, storage_root=None):
             raise ValueError("Supply HF_TOKEN with access to the private checkpoint repositories; use write access for final results upload.")
         # Small bootstrap only; torch/vLLM are installed into EVAL_ENV later.
         subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "uv==0.11.22", "PyYAML==6.0.3", "huggingface-hub==0.36.2"])
+        # Also cover a kernel that imported huggingface_hub before this cell ran.
+        from huggingface_hub import constants as hf_constants
+        hf_constants.HF_HUB_ENABLE_HF_TRANSFER = False
         print("Workspace:", STORAGE_ROOT)
         '''),
         code(f'''
@@ -183,6 +200,8 @@ def cells(gpu_count=2, storage_root=None):
         cached data and pretrained weights are reused. Repeated setup is safe with the
         same code, protocol and checkpoint paths. RunPod outputs use a separate root
         from Colab outputs; do not copy Colab resume journals into this folder.
+        `data/manifest.json` records the sampling seed, method and all 1,400 selected
+        MMLU-Pro question IDs by subject. This same prepared dataset feeds every model.
         '''),
         code('''
         run_logged(parallel_command("--prepare-only"), cwd=CODE_ROOT,
@@ -234,7 +253,7 @@ def cells(gpu_count=2, storage_root=None):
         markdown(f'''
         ## Read saved results and export
 
-        Results: `{storage_root}/results/eval-all9-transfer-temp0/`.
+        Results: `{storage_root}/results/eval-all9-transfer-mmlu100-seed42-temp0/`.
         `comparison.csv`/`.json`, `subject_task_breakdowns.csv`, and per-model
         `full/results.json`, `full/responses.jsonl`, and benchmark `generations.jsonl`
         follow the Colab layout. `runpod_status.json` shows queue/GPU progress;

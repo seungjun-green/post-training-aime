@@ -1,0 +1,264 @@
+version: qwen-transfer-mmlu100-v1
+models:
+  base:
+    label: B0
+    repo: Qwen/Qwen2.5-3B
+    revision: 3aab1f1954e9cc14eb9509a215f9e5ca08227a9b
+    eos_token_id: 151643
+  base_rl:
+    label: B-RL
+    path: base-rl-native-eos/checkpoints/dapo_qwen25_3b_pretrained_base/checkpoint-300
+    kind: rl
+    step: 300
+    eos_token_id: 151643
+  kimi_sft:
+    label: B-s1 (Kimi-style) SFT
+    path: base-sft-v2-short/checkpoints/stage1/sft_qwen25_3b_base_s1_kimi/epoch_5
+    kind: sft
+    epoch: 5
+    step: 310
+    eos_token_id: 151645
+    expected_identity: 5644b316cb49344bea968be58871bc87a6bae072f50309bcfba18a1ce6e577ef
+  rejection_sft:
+    label: B-rejection sampling SFT (epoch 4)
+    path: base-rejection-sampling-sft/checkpoints/stage1/sft_qwen25_3b_base_self_rft/epoch_4
+    kind: sft
+    epoch: 4
+    step: 7068
+    eos_token_id: 151643
+  distill_sft:
+    label: B-7B distillation SFT (epoch 5)
+    path: base-7b-distillation-sft/checkpoints/stage1/sft_qwen25_3b_base_7b_distill/epoch_5
+    kind: sft
+    epoch: 5
+    step: 11780
+    eos_token_id: 151643
+  rejection_rl:
+    label: B-rejection sampling SFT + RL
+    path: base-rejection-sampling-sft-rl/checkpoints/dapo_qwen25_3b_rejection_epoch4_sft/checkpoint-300
+    kind: rl
+    step: 300
+    parent_epoch: 4
+    eos_token_id: 151643
+  distill_rl:
+    label: B-7B distillation SFT + RL
+    path: base-7b-distillation-sft-rl/checkpoints/dapo_qwen25_3b_7b_distill_epoch5_sft/checkpoint-300
+    kind: rl
+    step: 300
+    parent_epoch: 5
+    eos_token_id: 151643
+  instruct:
+    label: I0
+    repo: Qwen/Qwen2.5-3B-Instruct
+    revision: aa8e72537993ba99e69dfaafa59ed015b17504d1
+    eos_token_id: 151645
+  instruct_rl:
+    label: I-RL
+    path: /content/drive/MyDrive/LG-AIME-DAPO-Qwen25-3B-MiniBatch300-MemoryFix/checkpoints/dapo_qwen25_3b_base/checkpoint-300
+    kind: rl
+    step: 300
+    eos_token_id: 151645
+generation:
+  temperature: 0.0
+  top_p: 1.0
+  seed: 42
+  max_new_tokens: 4096
+  max_model_len: 32768
+  max_num_seqs: 32
+  gpu_memory_utilization: 0.9
+  dtype: bfloat16
+  tensor_parallel_size: 1
+  generation_config: auto
+  trust_remote_code: false
+execution:
+  max_pending_problems: 32
+  status_interval_seconds: 30
+sources:
+  arc:
+    repo: allenai/ai2_arc
+    revision: 210d026faf9955653af8916fad021475a3f00453
+    filename: ARC-Challenge/test-00000-of-00001.parquet
+    sha256: 62f03257e737aed263f55c6abf87c7bb0028a44a6bdd2a26eb1279eb42c1d1e9
+    rows: 1172
+  mmlu_test:
+    repo: TIGER-Lab/MMLU-Pro
+    revision: b189ec765aa7ed75c8acfea42df31fdae71f97be
+    filename: data/test-00000-of-00001.parquet
+    sha256: 0e24a191921c2f453518a537a8b2117bd137e7714d4ef1565e9ba06c1ecb9ad8
+    rows: 12032
+  mmlu_validation:
+    repo: TIGER-Lab/MMLU-Pro
+    revision: b189ec765aa7ed75c8acfea42df31fdae71f97be
+    filename: data/validation-00000-of-00001.parquet
+    sha256: 139423c23722e480c807ac4a191409a710cfce4eba744c1d641cf88e730e2078
+    rows: 70
+  ifeval:
+    repo: google/IFEval
+    revision: 966cd89545d6b6acfd7638bc708b98261ca58e84
+    filename: ifeval_input_data.jsonl
+    sha256: 6a85310ca8ce15eff755aa08a3a4ff931c7e273e7515ebb3c492ea85fd8288f2
+    rows: 541
+  bbh/boolean_expressions:
+    repo: lukaemon/bbh
+    revision: 982bb89fd79532a8ac676a61fc42eb1aeec63f99
+    filename: boolean_expressions/test-00000-of-00001.parquet
+    sha256: c5de3d5c30fecdee9fdd6348f4fb324f64be8597f28e9d60d4e647e06df28b27
+    rows: 250
+  bbh/causal_judgement:
+    repo: lukaemon/bbh
+    revision: 982bb89fd79532a8ac676a61fc42eb1aeec63f99
+    filename: causal_judgement/test-00000-of-00001.parquet
+    sha256: 787b07b98aaaaeda52da57852a61fa89fa136d7026008e3f4958293384949de3
+    rows: 187
+  bbh/disambiguation_qa:
+    repo: lukaemon/bbh
+    revision: 982bb89fd79532a8ac676a61fc42eb1aeec63f99
+    filename: disambiguation_qa/test-00000-of-00001.parquet
+    sha256: 94f25b514de46673114f229eea71a88b22f5777fc852f4b71ccb0291fd65b0de
+    rows: 250
+  bbh/dyck_languages:
+    repo: lukaemon/bbh
+    revision: 982bb89fd79532a8ac676a61fc42eb1aeec63f99
+    filename: dyck_languages/test-00000-of-00001.parquet
+    sha256: 041cf145093a075070392bb267f580d3035b5faa922a72c9a58cf70de295982b
+    rows: 250
+  bbh/formal_fallacies:
+    repo: lukaemon/bbh
+    revision: 982bb89fd79532a8ac676a61fc42eb1aeec63f99
+    filename: formal_fallacies/test-00000-of-00001.parquet
+    sha256: dc98f32c2cb21deceb67dae775dcd6de03ba8c067ac280f43f7dd8973fcc807c
+    rows: 250
+  bbh/hyperbaton:
+    repo: lukaemon/bbh
+    revision: 982bb89fd79532a8ac676a61fc42eb1aeec63f99
+    filename: hyperbaton/test-00000-of-00001.parquet
+    sha256: e231956d054f3bfa868482348e9c089d41239cc5a1aafe4e1b08a6fcbd0474c7
+    rows: 250
+  bbh/logical_deduction_five_objects:
+    repo: lukaemon/bbh
+    revision: 982bb89fd79532a8ac676a61fc42eb1aeec63f99
+    filename: logical_deduction_five_objects/test-00000-of-00001.parquet
+    sha256: 413dd1a9abdaeffa6ec7869c21914050f0604adec94048c60071b80889189a8e
+    rows: 250
+  bbh/logical_deduction_seven_objects:
+    repo: lukaemon/bbh
+    revision: 982bb89fd79532a8ac676a61fc42eb1aeec63f99
+    filename: logical_deduction_seven_objects/test-00000-of-00001.parquet
+    sha256: 50912eb454be853c03409555f5aae43ff3a0bad1775ee29c13f917bee972105a
+    rows: 250
+  bbh/logical_deduction_three_objects:
+    repo: lukaemon/bbh
+    revision: 982bb89fd79532a8ac676a61fc42eb1aeec63f99
+    filename: logical_deduction_three_objects/test-00000-of-00001.parquet
+    sha256: 69666640c655c70e4ee6628dd2475e911981b0e828e43ac69bbb9d8144144586
+    rows: 250
+  bbh/movie_recommendation:
+    repo: lukaemon/bbh
+    revision: 982bb89fd79532a8ac676a61fc42eb1aeec63f99
+    filename: movie_recommendation/test-00000-of-00001.parquet
+    sha256: bc9e7238d45633dd1fd17ca6bef47fe07f1b709e8d1539c7002c2e7da0add4fe
+    rows: 250
+  bbh/ruin_names:
+    repo: lukaemon/bbh
+    revision: 982bb89fd79532a8ac676a61fc42eb1aeec63f99
+    filename: ruin_names/test-00000-of-00001.parquet
+    sha256: d75882ee191fc60464c4c8cb6d90085a565de4476f58c8ada0fe31f0d18e3a24
+    rows: 250
+  bbh/salient_translation_error_detection:
+    repo: lukaemon/bbh
+    revision: 982bb89fd79532a8ac676a61fc42eb1aeec63f99
+    filename: salient_translation_error_detection/test-00000-of-00001.parquet
+    sha256: fd56dfa6d5a3c00fab3cf0a3b951a4cb2d5daf6cd0a564b4229dbc7fee13ba5e
+    rows: 250
+  bbh/snarks:
+    repo: lukaemon/bbh
+    revision: 982bb89fd79532a8ac676a61fc42eb1aeec63f99
+    filename: snarks/test-00000-of-00001.parquet
+    sha256: 4aa85c7c94ba0b6de3e5245af6af2dac4df2b979e8fc944513a317d20d77382e
+    rows: 178
+  bbh/sports_understanding:
+    repo: lukaemon/bbh
+    revision: 982bb89fd79532a8ac676a61fc42eb1aeec63f99
+    filename: sports_understanding/test-00000-of-00001.parquet
+    sha256: 0f67780a329b4b4a22698d19f95f165b68831aad18c59236834b2c7272d37008
+    rows: 250
+  bbh/tracking_shuffled_objects_five_objects:
+    repo: lukaemon/bbh
+    revision: 982bb89fd79532a8ac676a61fc42eb1aeec63f99
+    filename: tracking_shuffled_objects_five_objects/test-00000-of-00001.parquet
+    sha256: ba3cdb666a305b3bd87be668e16c66b6bc7ada0a71cd53bc25f65932a814d00a
+    rows: 250
+  bbh/tracking_shuffled_objects_seven_objects:
+    repo: lukaemon/bbh
+    revision: 982bb89fd79532a8ac676a61fc42eb1aeec63f99
+    filename: tracking_shuffled_objects_seven_objects/test-00000-of-00001.parquet
+    sha256: 23f26fa036a7314b86e6eca4ad985218930645b47a31f920b65da70b22f98227
+    rows: 250
+  bbh/tracking_shuffled_objects_three_objects:
+    repo: lukaemon/bbh
+    revision: 982bb89fd79532a8ac676a61fc42eb1aeec63f99
+    filename: tracking_shuffled_objects_three_objects/test-00000-of-00001.parquet
+    sha256: b3d557e426ac57f4b2194b4be5d810eb4425ff5a2c776d9b0bb6572b246c4564
+    rows: 250
+  bbh/web_of_lies:
+    repo: lukaemon/bbh
+    revision: 982bb89fd79532a8ac676a61fc42eb1aeec63f99
+    filename: web_of_lies/test-00000-of-00001.parquet
+    sha256: ad0a5707016259f060927a7a777bb0434c5e5293da0f6570e4e185919c434f11
+    rows: 250
+  bbh/word_sorting:
+    repo: lukaemon/bbh
+    revision: 982bb89fd79532a8ac676a61fc42eb1aeec63f99
+    filename: word_sorting/test-00000-of-00001.parquet
+    sha256: 7c623d20c1e38e7b1b67213d0933b7b24b18edb5b9788a33ae0b05add40f7201
+    rows: 250
+bbh_tasks:
+- boolean_expressions
+- causal_judgement
+- disambiguation_qa
+- dyck_languages
+- formal_fallacies
+- hyperbaton
+- logical_deduction_five_objects
+- logical_deduction_seven_objects
+- logical_deduction_three_objects
+- movie_recommendation
+- ruin_names
+- salient_translation_error_detection
+- snarks
+- sports_understanding
+- tracking_shuffled_objects_five_objects
+- tracking_shuffled_objects_seven_objects
+- tracking_shuffled_objects_three_objects
+- web_of_lies
+- word_sorting
+bbh_excluded:
+- date_understanding
+- geometric_shapes
+- multistep_arithmetic_two
+- navigate
+- object_counting
+- penguins_in_a_table
+- reasoning_about_colored_objects
+- temporal_sequences
+mmlu_subjects:
+- biology
+- business
+- chemistry
+- computer science
+- economics
+- engineering
+- health
+- history
+- law
+- math
+- other
+- philosophy
+- physics
+- psychology
+
+# Custom test subset; the pinned source file above still contains all 12,032 rows.
+mmlu_selection:
+  method: sha256_id_rank_v1
+  per_subject: 100
+  seed: 42
