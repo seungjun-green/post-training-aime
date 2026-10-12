@@ -7,9 +7,12 @@ from build_notebooks import ROOT, bootstrap, code, markdown, payload, write_note
 sys.path.insert(0, str(ROOT))
 from eval.run_transfer_eval import bundle_files  # noqa: E402
 
+DISPLAY_FILES = ['common/eval_progress.py']
+
 
 def cells():
-    boot = bootstrap(payload([ROOT / name for name in bundle_files()]))
+    # Display-only helpers do not change the scientific code digest or invalidate resumes.
+    boot = bootstrap(payload([ROOT / name for name in bundle_files() + DISPLAY_FILES]))
     boot.source = boot.source.replace('/content/lg-korean-aime', '/content/lg-qwen-transfer-eval')
     return [
         markdown('''
@@ -105,6 +108,7 @@ def cells():
         '''),
         code('''
         from common.process import run_logged
+        from common.eval_progress import run_eval_logged
         from eval.run_transfer_eval import load_config
         from eval.transfer_models import prepare_models
 
@@ -178,38 +182,46 @@ def cells():
         code('''
         RUN_SMOKE = False
         if RUN_SMOKE:
-            for run in runs:
-                print("Smoke:", run["label"])
-                run_logged(command("--model-key", run["key"], "--smoke"), cwd=CODE_ROOT,
+            for index, run in enumerate(runs, 1):
+                run_eval_logged(command("--model-key", run["key"], "--smoke"), cwd=CODE_ROOT,
                            log_path=Path(OUTPUT_ROOT) / "models" / run["key"] / "logs/smoke_console.log",
                            progress_totals={"arc_challenge": 1, "mmlu_pro": 14, "bbh_nonmath": 19, "ifeval": 1},
-                           compact_progress=True)
+                           label=f"Smoke {index}/{len(runs)} · {run['label']}")
         else:
             print("Set RUN_SMOKE = True for the optional smoke run.")
         '''),
         markdown('''
         ## Full evaluation — run/resume selected models
 
-        Set `RUN_EVAL = True`. Each model is evaluated sequentially, with live progress.
+        Set `RUN_EVAL = True`. Each model gets one compact tqdm bar showing its current
+        benchmark, completed/total problems, remaining problems, elapsed time, estimated
+        time remaining and processing speed. Startup/compilation messages and repeated
+        generation heartbeats are saved to `models/<key>/logs/eval_console.log` instead
+        of flooding the cell. Errors still include their diagnostic tail and log path.
+        ETA starts after model loading, measures newly generated work, and can vary as
+        the model moves between benchmarks. Previously saved responses count as completed.
+
         Rerunning skips saved responses; a completed model is checked and re-summarized
         without loading its weights onto the GPU. Reading/hashing model files from Drive
         can take several minutes. A failure stops the loop; fix it and rerun this cell.
         Completed earlier models and individual responses are retained.
 
-        The comparison tables update after every finished model. Full results do not
+        The saved comparison tables update after every finished model; the notebook
+        displays the tables once after the selected models finish. This display-only
+        update preserves compatibility with existing saved evaluation responses.
+        Full results do not
         mix with smoke, and changed code/settings/model/data/runtime cannot silently resume.
         '''),
         code('''
         RUN_EVAL = False
         if RUN_EVAL:
-            for run in runs:
-                print("Full evaluation:", run["label"])
-                run_logged(command("--model-key", run["key"]), cwd=CODE_ROOT,
+            for index, run in enumerate(runs, 1):
+                run_eval_logged(command("--model-key", run["key"]), cwd=CODE_ROOT,
                            log_path=Path(OUTPUT_ROOT) / "models" / run["key"] / "logs/eval_console.log",
-                           progress_totals=totals, compact_progress=True)
+                           progress_totals=totals, label=f"Model {index}/{len(runs)} · {run['label']}")
                 run_logged(command("--summarize"), cwd=CODE_ROOT,
                            log_path=Path(OUTPUT_ROOT) / "logs/summary_console.log")
-                show_results()
+            show_results()
         else:
             print("Set RUN_EVAL = True to evaluate the selected models.")
         '''),

@@ -57,6 +57,8 @@ Notebook: [evaluate_qwen25_3b_all9_transfer.ipynb](notebooks/evaluate_qwen25_3b_
 
 Code, official IFEval scoring, three-shot BBH prompts, and English sentence-tokenizer resources are embedded. Dataset files use pinned Hugging Face revisions, hashes and row counts. No GitHub checkout, training, or upload. Run the setup/data cells, optionally `RUN_SMOKE = True` (35 prompts per model), then `RUN_EVAL = True`. Models run sequentially in separate GPU processes, with immediate response saving, per-model resume, and tables updated after each model. Use `MODEL_KEYS` to run a subset if needed; default is all nine. Actual GPU inference has not been run locally.
 
+Colab evaluation uses one compact tqdm bar per model: current benchmark, completed/total and remaining problems, elapsed time, throughput and ETA. vLLM startup messages and generation heartbeats stay in `models/<key>/logs/eval_console.log`; failures expose their diagnostic tail. Cached responses are included in completion counts but excluded from the speed estimate. Tables are saved after every model and displayed once after the selected models finish. This display-only update preserves the evaluation code identity and existing response journals.
+
 Exact output root:
 
 ```text
@@ -75,6 +77,32 @@ Exact output root:
 | Console logs | `models/<key>/logs/eval_console.log` |
 
 Model keys: `base`, `base_rl`, `kimi_sft`, `rejection_sft`, `distill_sft`, `rejection_rl`, `distill_rl`, `instruct`, `instruct_rl`. Benchmark keys: `arc_challenge`, `mmlu_pro`, `bbh_nonmath`, `ifeval`. Smoke artifacts use `smoke/` instead of `full/` and never enter the full comparison.
+
+### RunPod: two or four RTX PRO 6000 GPUs
+
+Current pod notebook: [evaluate_qwen25_3b_all9_transfer_runpod_2gpu.ipynb](notebooks/evaluate_qwen25_3b_all9_transfer_runpod_2gpu.ipynb). **Ready; GPU execution/results pending.** Uses the same nine checkpoints, benchmark prompts, scorers, temperature **0** and **4,096** new-token cap. A dynamic queue evaluates two models concurrently on the current pod, one per GPU (tensor parallel size 1); each free GPU takes the next model. Completed responses are saved immediately and reused on resume. Workers have separate logs/journals; the coordinator updates the combined tables after each model.
+
+Current pod: **RunPod PyTorch 2.8.0 template, 2 × RTX PRO 6000, 200 GB container disk**, reported by the user. The two-GPU notebook defaults to `GPU_IDS = ["0", "1"]` and `STORAGE_ROOT = /root/qwen-transfer`, so downloads use the enlarged container filesystem rather than a potentially separate smaller `/workspace` volume. The notebook installs the existing pinned **Python 3.12 / PyTorch 2.9.1 / vLLM 0.14.1** evaluation environment separately and verifies CUDA execution on each selected GPU. The template's PyTorch installation remains intact. Actual free-space checks run before checkpoint downloads. **Container-disk files are lost on Pod stop/restart: complete the HF upload or copy results out first.** See [RunPod storage](https://docs.runpod.io/pods/storage/types).
+
+The [four-GPU variant](notebooks/evaluate_qwen25_3b_all9_transfer_runpod_4gpu.ipynb) remains available with `GPU_IDS = ["0", "1", "2", "3"]` and `/workspace/qwen-transfer` for a 200 GB persistent volume. Both variants use the same benchmark settings and exporter.
+
+Authorize a `gdrive:` rclone remote once using the notebook's terminal instructions, then set `COPY_FROM_DRIVE = True` to copy the seven selected checkpoints and their training manifests. Only inference files are copied; optimizer states and other epochs are excluded. Manual uploads to the displayed paths are also supported. The two pretrained models download from their pinned Hugging Face revisions. Run setup/preparation, optionally `RUN_SMOKE = True`, then `RUN_EVAL = True`.
+
+| Artifact | RunPod path |
+| --- | --- |
+| Experiment checkpoint tree | `/root/qwen-transfer/models/LG-AIME-Qwen25-3B-Experiments/` |
+| Instruct + RL checkpoint tree | `/root/qwen-transfer/models/LG-AIME-DAPO-Qwen25-3B-MiniBatch300-MemoryFix/` |
+| Isolated evaluation environment | `/root/qwen-transfer/envs/eval/` |
+| Results root | `/root/qwen-transfer/results/eval-all9-transfer-temp0/` |
+| Aggregate progress | `runpod_status.json` under the results root |
+| Coordinator log | `logs/runpod_eval_console.log` under the results root |
+| Per-model worker log | `models/<key>/logs/runpod_eval_console.log` under the results root |
+
+Scores, subject/task breakdowns and response journals follow the table above under this separate RunPod results root. `BACKUP_TO_DRIVE = True` optionally copies results to `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/eval-all9-transfer-runpod-temp0/` (the equivalent My Drive folder; Drive is not mounted on RunPod). Backup requires a write-authorized remote. No Pod is created or stopped automatically. Save results before deleting a Pod with only a Pod volume.
+
+**Hugging Face export:** the final notebook cell defaults to `UPLOAD_TO_HF = True`, targeting the **private** dataset `Seungjun/qwen25-3b-transfer-eval-results` (`HF_REPO_ID` / `HF_PRIVATE` are editable). Supply a write-enabled `HF_TOKEN` at setup. After all selected full evaluations finish, it validates saved records against the raw response journals and reported metrics, then uploads compressed **Parquet inference records**, **CSV score tables**, and a generated **README dataset card** with overall scores, MMLU-Pro subjects, BBH tasks, IFEval metrics, checkpoints and protocol details. Parquet has one configuration per model, a `test` split, and full prompts/responses plus grading details. Data/runtime provenance and file checksums are included; weights, credentials and logs are excluded.
+
+Local exports: `/root/qwen-transfer/results/eval-all9-transfer-temp0/hf_exports/<export-id>/`. Hub snapshots: `runs/<export-id>/`; previous snapshots are retained, and the root README points to the latest export. Set `UPLOAD_TO_HF = False` for local export only. If uploading fails, rerun only the final cell after correcting the token/settings; no inference is repeated. Incomplete or smoke-only runs cannot publish. **Actual Hub upload is pending notebook execution.**
 
 ## Dataset creation
 

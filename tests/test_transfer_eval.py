@@ -249,7 +249,7 @@ def test_subject_macro_and_nonmath_aggregate():
 
 def test_notebook_commands_and_isolated_bundle(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(ROOT / 'scripts'))
-    from build_qwen_transfer_eval_notebook import cells
+    from build_qwen_transfer_eval_notebook import DISPLAY_FILES, cells
     notebook = nbformat.read(ROOT / 'notebooks/evaluate_qwen25_3b_all9_transfer.ipynb', as_version=4)
     nbformat.validate(notebook)
     assert [c.source for c in notebook.cells] == [c.source for c in cells()]
@@ -263,9 +263,12 @@ def test_notebook_commands_and_isolated_bundle(tmp_path, monkeypatch):
     config = load_config(CONFIG)
     runs = [{'key': k, 'label': e['label']} for k, e in config['models'].items()]
     calls = []
+    displays = []
     context.update(runs=runs, CODE_ROOT=ROOT, totals={'arc_challenge': 1172, 'mmlu_pro': 12032,
                    'bbh_nonmath': 4615, 'ifeval': 541}, command=lambda *a: list(a),
-                   run_logged=lambda command, **kwargs: calls.append((command, kwargs)), show_results=lambda: None)
+                   run_logged=lambda command, **kwargs: calls.append((command, kwargs)),
+                   run_eval_logged=lambda command, **kwargs: calls.append((command, kwargs)),
+                   show_results=lambda: displays.append(True))
     for flag in ['RUN_SMOKE', 'RUN_EVAL']:
         source = next(s for s in sources if flag + ' = False' in s)
         before = len(calls)
@@ -273,18 +276,27 @@ def test_notebook_commands_and_isolated_bundle(tmp_path, monkeypatch):
         assert len(calls) == before
         exec(source.replace(flag + ' = False', flag + ' = True'), context)
     assert len(calls) == 27  # Nine smoke, nine full, nine summary calls.
+    assert len(displays) == 1  # Tables are displayed once, not repeated after every model.
     for i in range(9):
         assert calls[i][0] == ['--model-key', runs[i]['key'], '--smoke']
         assert calls[9+2*i][0] == ['--model-key', runs[i]['key']]
         assert sum(calls[9+2*i][1]['progress_totals'].values()) == 18360
+        assert calls[9+2*i][1]['label'] == f'Model {i+1}/9 · {runs[i]["label"]}'
     boot = next(s for s in sources if 'BUNDLE =' in s)
     node = next(n for n in ast.parse(boot).body if isinstance(n, ast.Assign)
                 and any(isinstance(t, ast.Name) and t.id == 'BUNDLE' for t in n.targets))
     with zipfile.ZipFile(io.BytesIO(base64.b64decode(ast.literal_eval(node.value)))) as archive:
-        assert set(archive.namelist()) == set(bundle_files())
-        for name in bundle_files():
+        assert set(archive.namelist()) == set(bundle_files() + DISPLAY_FILES)
+        for name in bundle_files() + DISPLAY_FILES:
             assert archive.read(name) == (ROOT / name).read_bytes()
         archive.extractall(tmp_path / 'isolated')
+    # Presentation changes must preserve the identity of already-running evaluations.
+    from eval.run_transfer_eval import code_digest
+    assert not set(DISPLAY_FILES) & set(bundle_files())
+    isolated_digest = subprocess.check_output([sys.executable, '-c',
+        'from eval.run_transfer_eval import code_digest; print(code_digest())'],
+        cwd=tmp_path / 'isolated', text=True).strip()
+    assert isolated_digest == code_digest()
     subprocess.run([sys.executable, '-m', 'eval.run_transfer_eval', '--help'], cwd=tmp_path / 'isolated',
                    check=True, capture_output=True)
     subprocess.run([sys.executable, '-c',
