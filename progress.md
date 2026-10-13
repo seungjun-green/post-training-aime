@@ -124,6 +124,12 @@ Scores, subject/task breakdowns and response journals follow the table above und
 
 Local exports: `/root/qwen-transfer/results/eval-all9-transfer-mmlu100-seed42-temp0/hf_exports/<export-id>/`. Hub snapshots: `runs/<export-id>/`; previous snapshots are retained, and the root README points to the latest export. Set `UPLOAD_TO_HF = False` for local export only. If uploading fails, rerun only the final cell after correcting the token/settings; no inference is repeated. Incomplete or smoke-only runs cannot publish. **Actual Hub upload is pending notebook execution.**
 
+## Collect training histories for the final write-up
+
+Notebook: [collect_qwen_training_logs.ipynb](notebooks/collect_qwen_training_logs.ipynb). Run all cells in **CPU Colab** with Drive mounted. It reads the seven trained Qwen variants, distillation continuation epochs 6–7, and the original instruct-RL run used for recovery at step 40. It preserves `steps.jsonl` (including nested reward/length/entropy metrics), run manifests, training reports, attempts/abandoned-step histories, small checkpoint JSON metadata, and available per-epoch/math evaluation summary tables. B0/I0 have no training logs. RunPod-only transfer results remain separate HF artifacts.
+
+The notebook creates and checks one ZIP, downloads it, and saves a backup under `/content/drive/MyDrive/LG-AIME-Qwen25-3B-Experiments/writeup-artifacts/`. `collection_manifest.json` records source paths, checksums, missing files and collection errors; `run_inventory.csv` records available metric fields and step ranges. Weights, optimizer states, datasets, raw rollouts, generated answers and console logs are excluded. Original logs are unchanged; no curves or merged histories are produced. The instruct-RL parent history must contribute only steps 1–40 when later merging with MemoryFix. **Collector tested locally with fixtures; actual Drive files will be inspected after the user returns the ZIP.**
+
 ## Dataset creation
 
 ### Part 1: Creating the 30K problem pool
