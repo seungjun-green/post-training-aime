@@ -4,6 +4,10 @@ Updated: 2026-10-12. This is the current roadmap provided by the user; previous 
 
 Model family: **Qwen2.5-3B**, matching the current instruct + RL run. Base revision is now pinned to `3aab1f1954e9cc14eb9509a215f9e5ca08227a9b`; future training settings remain to be decided. Status reflects reported progress, not live monitoring of Drive.
 
+## Final report
+
+The completed study is documented in [the final write-up](write-up.md), with a [standalone HTML reading version](write-up.html), eight figures, all nine models’ math and transfer results, and training-log analysis. The previous EXAONE report is preserved in [the archive](docs/archive/write-up-exaone-2026-10-03.md).
+
 ## Progress
 
 Legend: — = not required; ☐ = pending; ◐ = running; ☑ = complete.

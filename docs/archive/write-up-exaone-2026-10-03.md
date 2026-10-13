@@ -1,0 +1,192 @@
+# EXAONE math reasoning: progress
+
+The project uses **LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct** with the original English math datasets. Data preparation, Hugging Face publication, and the full stage-0 baseline evaluation are complete. Fine-tuning has not started.
+
+## Direction and data preparation
+
+We initially explored Korean translation through hosted APIs and local models. API refusals and translation errors that changed mathematical notation or meaning made that approach unreliable. We switched to English while keeping the same base model.
+
+Training data was checked against the five evaluation sets using normalization v2 and distinct 8-gram coverage. A training row is removed when it covers at least 70% of an individual evaluation problem's distinct 8-grams; evaluation problems shorter than eight tokens use exact normalized substring matching. Matches are not pooled across evaluation problems. This replaced the overly aggressive rule that removed a row for any single shared 8-gram.
+
+| Training dataset | Original rows | Removed | Retained |
+|---|---:|---:|---:|
+| s1K-1.1 | 1,000 | 4 | 996 |
+| DAPO-Math-17k-Processed | 14,116 | 48 | 14,068 |
+
+This removes **training-versus-evaluation overlap only**, not duplicates within or between training datasets. All 630 evaluation problems remain unchanged. The seven datasets were uploaded to Hugging Face under `Seungjun/dp_removed_{original_name}`; exact evaluation revisions are recorded in [the dataset suite](configs/english_eval_suite.json).
+
+## Stage-0 English baseline
+
+The full run evaluated **630 problems with 6,160 sampled responses** on an NVIDIA RTX PRO 6000 Blackwell 96GB using vLLM. These are the base model's results before project fine-tuning under the original 32-sample AIME/AMC and four-sample MATH-500 protocol. They remain historical results; the new `greedy` and `sample8` profiles require their own matching baseline runs.
+
+| Dataset | Problems | Samples per problem (n) | Pass@1 / avg@n | Pass@4 | Pass@n | Solved at least once |
+|---|---:|---:|---:|---:|---:|---:|
+| AIME 2024 | 30 | 32 | 3.02% | 7.45% | 13.33% | 4/30 |
+| AIME 2025 | 30 | 32 | 3.44% | 9.52% | 23.33% | 7/30 |
+| AIME 2026 | 30 | 32 | 1.46% | 4.28% | 13.33% | 4/30 |
+| AMC 2023 | 40 | 32 | 36.56% | 58.26% | 80.00% | 32/40 |
+| MATH-500 | 500 | 4 | 63.20% | 77.60% | 77.60% | 388/500 |
+
+Pass@1 is estimated from all sampled responses and equals avg@n here; it is not a separate greedy-decoding run. Pass@k estimates the chance of at least one correct answer among k samples. At k = n, it is the fraction of problems solved at least once. It does not measure whether the model can select its correct answer.
+
+Evaluation uses temperature **1.0**, top-p **0.7**, a **20,480-token output limit**, and a **32,768-token context limit**. Original English problems are passed through the model's native chat template with an English step-by-step instruction. The last balanced `\boxed{...}` answer is graded with `math-verify`; reasoning quality is not separately scored. Settings are in [eval_english.yaml](configs/eval_english.yaml).
+
+The supplied `stage0.zip` was checked for complete, unique samples and consistent metadata. Metrics were recomputed and saved answer pairs rescored with no discrepancies. Seven responses reached the output limit, and six lacked a boxed answer. Low AIME accuracy therefore is not explained by widespread truncation or missing answer extraction. The baseline performs substantially better on MATH-500 and AMC23 than on AIME under this protocol.
+
+Run provenance:
+
+- Evaluation Git commit: `2e0d65aaf8803aee532eb38c3335736b9e66a18f`.
+- Model revision: `e949c91dec92095908d34e6b560af77dd0c993f8` (loader compatible with the pinned runtime).
+- Runtime: vLLM 0.14.1, PyTorch 2.9.1, Transformers 4.57.6, math-verify 0.9.0; BF16.
+- Results: `/content/drive/MyDrive/LG-AIME-English-Eval-compatible/full/results/stage0`.
+
+## Current workflow and next step
+
+The additional [temperature-1.0 SFT evaluator](notebooks/evaluate_stage1_sft_temp1.ipynb)
+uses `sample1`: one answer per problem on all five benchmarks, top-p 0.7, and the same
+20,480-token output limit. It selects epoch 5 by default and writes separate results under
+`profiles/sample1/`. This permits checking sampled decoding after the greedy evaluation;
+GPU results from this new profile have not yet been collected. Existing evaluation notebooks
+retain their defaults; the new profile is also available through the shared baseline/SFT CLI.
+
+A separate [DeepSeek regeneration notebook](notebooks/regenerate_s1_deepseek.ipynb) now prepares
+alternative reasoning targets from the same 996 decontaminated s1K questions. It uses
+`deepseek-v4-pro` with thinking enabled. Following review of the first smoke CSV, the final response
+now explicitly requires Planning, Evaluation (the full worked derivation), Reflection, and
+Exploration sections followed by the final answer. It imposes no prompt-level brevity target or
+answer-correctness filter. `deepseek-v4-pro_answer` is the intended structured training target;
+`deepseek-v4-pro_reasoning` stores raw API thinking separately for inspection.
+The 20-example random smoke cell exports an old/new comparison CSV. The separate full-run cell
+preserves all source columns and adds `deepseek-v4-pro_reasoning` and `deepseek-v4-pro_answer`.
+Concurrent requests, retry journals, and resumable outputs are saved to Drive. Technical failures
+and section-format failures remain visible separately; partial outputs contain all rows with null
+generated fields for failures. The revised prompt starts a fresh run on the same seeded smoke sample.
+This is data generation only: the existing SFT and evaluation implementations are unchanged.
+Local mocked-API tests passed; no live DeepSeek generation has been run during implementation.
+
+The subsequent full export used the original generation approach, and the selected training target
+is now **both Pro thinking and answer**, preserving the existing `<think>…</think>` format.
+The separate Llama experiment uses `notebooks/train_stage1_llama31_lora.ipynb` and
+`configs/stage1_sft_llama31_lora.yaml`: Llama 3.1 8B Instruct at revision
+`0e9e39f249a16976918f6564b8830bc894c89659`, with the original DeepSeek reasoning/answer
+columns. LoRA settings are rank 32, alpha 64, dropout 0.05, all seven attention/MLP projections,
+LR 5e-5, five epochs, microbatch 1 and accumulation 16. BF16 base weights remain frozen;
+only adapter matrices train. The native Llama template supervises reasoning, answer and EOT,
+and excludes prompt/padding. Its template trims trailing answer whitespace. Llama tokenization
+recomputes which complete sequences fit 20,480 tokens. No correctness filter is applied.
+Preparation and longest-example GPU smoke training precede the separate full-run cell.
+Adapters and optimizer state are saved each epoch under `sft_llama31_8b_lora_s1k`, alongside
+loss logs, pinned config, parameter report and runtime manifest. This is a new experiment,
+not a modification of prior EXAONE results. CPU adapter-update/reload/resume checks passed;
+gated-tokenizer and GPU validation remain Colab checks. No Llama benchmark result is available yet.
+
+`train_stage1_sft.ipynb` defaults to `configs/stage1_sft_deepseek_pro.yaml` and starts from the
+original EXAONE base checkpoint with the same five-epoch hyperparameters. The uploaded export
+contains 990 complete pairs and six missing pairs. After excluding missing pairs and full native
+training sequences longer than 20,480 tokens, 718 examples remain (272 overlength exclusions).
+This gives 45 optimizer steps per epoch and 225 across five epochs. New checkpoints/logs use
+`sft_s1k_deepseek_pro`; the old config and outputs remain separate. The dataset's current HF
+revision is resolved to an immutable commit and its exact content is checked and recorded.
+`evaluate_stage1_sft_temp1.ipynb` retests the **previous `sft_s1k/epoch_5` checkpoint** using
+`configs/stage1_sft.yaml` by default. The notebook now offers `MODEL_KIND` (SFT or base)
+and `TEMPERATURE` controls. Base mode loads the pinned original EXAONE model without checkpoint
+checks or budget forcing; SFT applies budget forcing. Both use one answer per problem on all five
+benchmarks. Temperature defaults to 1.0/top-p 0.7; zero uses greedy decoding/top-p 1.0.
+Resolved sampling settings and model modes have separate result/log locations. The `sample1_budget` profile
+adds s1-style early-exit budget forcing with an editable thinking cap (default 18,432, minimum
+zero) and the remaining 2,048 tokens including any injected `</think>` and final-answer cue.
+The notebook saves a resolved budget YAML on Drive, and each budget split has its own output
+directory; the earlier fixed 16,384/4,096 profile is still available. Total continuation tokens
+stay within 20,480. Natural thinking termination is allowed; "Wait" extension is disabled.
+Two-phase requests use the existing continuous vLLM scheduler interface and scoring code.
+Results are isolated by profile, with phase counts and forced-transition flags in raw records.
+An optional five-problem smoke cell precedes the full-run cell. The old R1 checkpoint can be
+tested by selecting its original SFT config. No accuracy gain has been measured yet; local
+mock tests validate the mechanism, and the Colab GPU smoke test remains to be run.
+
+The active notebooks are:
+
+1. [Prepare English datasets](notebooks/prepare_english_datasets.ipynb): CPU decontamination and Hugging Face upload.
+2. [Evaluate the English baseline](notebooks/evaluate_baseline_english.ipynb): clone/update the project, install the GPU runtime, run a five-problem smoke test, then explicitly enable full evaluation. Includes tqdm progress and saved results on Drive.
+3. [Stage 1 SFT](notebooks/train_stage1_sft.ipynb): prepare and inspect assistant-only loss masks, then explicitly enable five-epoch training and save every epoch checkpoint. No evaluation runs here.
+4. [Stage 1 evaluation](notebooks/evaluate_stage1_sft.ipynb): evaluate epoch 5 on all five benchmarks by default, with epochs 1–4 optional afterward. Both this notebook and the baseline notebook offer `greedy` (temperature 0, one answer, 630 responses/checkpoint) and `sample8` (temperature 1.0/top-p 0.7, eight AIME/AMC answers and four MATH-500 answers, 3,040 responses/checkpoint). Use the same profile for base and SFT comparisons. Continuous batching and the original evaluation environment are retained.
+
+Evaluation logic lives in the project rather than the notebook. The preparation notebook still bundles its preparation code. The translation notebooks and old Korean baseline notebook have been removed; `README.md` is retained as historical documentation and contains references to those retired notebooks.
+
+Stage 1 code is implemented, with settings and execution instructions in the [run guide](docs/stage1_sft.md). CPU preparation using the actual pinned EXAONE tokenizer drops 21 examples exceeding 20,480 tokens and keeps 975, resulting in 61 optimizer steps per epoch and 305 total. The original 996 rows contain 370 `deepseek_grade`-incorrect examples; this grade does not filter training. The [data report](docs/stage1_data_report.json) records the exact dropped IDs and token-length statistics.
+
+Next is GPU validation and fine-tuning, followed by evaluation with the same datasets, prompts, sampling settings, scoring, and runtime. The continuous-batching runner supplies all five benchmarks for each selected epoch. The greedy profile queues up to 64 problems, and sample8 queues up to 16, for the existing 32 GPU response slots. Prompts, seeds, token limits and scoring remain shared. Profiles use isolated `profiles/<profile>/` directories and allow either model to run first, with matching settings required for comparisons; old 32-sample results are preserved without importing them. Settings are recorded in manifests; exact outputs may still vary with GPU numerics and batching. CPU tests cover scoring equivalence on identical responses, out-of-order completion, interruption recovery and source validation; GPU throughput has not yet been measured. Preserve the stage-0 archive and its parent protocol/runtime manifests for comparisons; no fine-tuned results are reported yet.
+
+
+## EXAONE DAPO pilot implementation
+
+`notebooks/train_dapo_exaone.ipynb` now selects the original EXAONE instruction model
+or original `sft_s1k/epoch_5` with a plain `MODEL_KIND` string. The separate DAPO path uses
+the decontaminated English Math-17K export, G=8, 16 retained mixed-correctness groups per
+update, token-normalized policy loss, asymmetric clipping 0.20/0.28, and a soft length penalty
+from 16,384 to 20,480 tokens. It runs the agreed 100-update pilot at LR 1e-6 (20-update warmup),
+saving full checkpoints every 20 updates and raw rollout/reward/filtering diagnostics to Drive.
+No learned reward model, KL reference model, or evaluation-time budget forcing is used.
+
+The TRL-based trainer uses a custom colocated vLLM path with explicit policy synchronization
+and sleep during optimization. FP32 master parameters/Adam state preserve small updates;
+computation and rollout weights use BF16. The notebook separates preparation, a one-update
+GPU smoke, and the full pilot. Local preparation with the actual EXAONE tokenizer retained
+all 14,068 decontaminated questions (52–1,662 prompt tokens). CPU tests cover reward shaping,
+dynamic refill, clipping/token normalization, training, checkpoint reload and resume.
+Actual vLLM/GPU execution remains a Colab smoke check; no DAPO benchmark gains are claimed.
+See [the run guide](docs/dapo.md) for outputs, storage requirements and runtime details.
+
+The supplied 100-update base-model log completed the pilot. Candidate-answer accuracy was
+17.3% over updates 1–20 and 20.1% over 81–100; changing sampled problems prevent treating this
+as a controlled benchmark gain. The continuation notebook now restores checkpoint 100 with
+optimizer/scheduler/RNG state and extends the same settings to a total of 300 updates. New
+outputs are isolated in `LG-AIME-DAPO-100to300`; the original run is preserved. Only the total
+step budget changes, with the constant-after-warmup schedule retained. CPU tests verify that
+a completed run can be extended without resetting optimizer state or step numbering.
+
+### Rollout reuse follow-up
+
+The original one-pass setup evaluates the policy loss before any update to each generated
+batch, so the PPO ratio is approximately one and asymmetric clipping normally does not
+engage. This is a schedule limitation, not a missing clamp in the loss. The training notebook
+now uses `configs/dapo_reuse.yaml`, with two optimizer updates per generated batch and fixed
+generation-time old-policy log-probabilities/advantages across both passes. Other training
+hyperparameters are retained; 100 optimizer updates now mean 50 fresh rollout batches.
+The default starting model is base and the output root is `LG-AIME-DAPO-Reuse2`.
+The original configs and 100-to-300 continuation retain one-pass behavior for reproducibility.
+
+Smoke now runs two updates. Checkpoints are allowed only at complete reuse-cycle boundaries
+because TRL does not serialize cached rollouts. Logs identify the rollout's first update,
+policy iteration and freshly generated token count. A zero clip fraction is still possible
+when a policy update is small; inducing nonzero clipping is not itself an optimization goal.
+This change is an experiment, not an established explanation or cure for the benchmark drop.
+
+### Llama 3.2 3B DAPO experiment
+
+`notebooks/train_dapo_llama32_3b.ipynb` starts full-parameter DAPO from the pinned
+`meta-llama/Llama-3.2-3B-Instruct` checkpoint with the two-pass rollout schedule. Algorithm,
+data and training settings match the EXAONE reuse experiment. It uses native Llama formatting,
+a fixed template date and explicit native stop tokens, with separate preparation, smoke and
+full-run cells. Outputs are isolated in `LG-AIME-DAPO-Llama32-3B` on Drive. Local tests exercise
+a small tied-embedding Llama model, clipping, termination accounting and exact resume;
+full-size GPU smoke and benchmark results are pending. No evaluation protocol was changed.
+
+### Disjoint minibatches and fresh 300-update runs
+
+Following clarification of the paper's training schedule, the current EXAONE and Llama DAPO
+notebooks use `dapo_minibatch.yaml` and `dapo_llama32_3b_minibatch.yaml`. Each rollout yields
+128 retained responses, shuffled into two disjoint minibatches of 64; each answer is used
+once (`num_iterations=1`). Original log-probabilities and group advantages stay fixed across
+the two optimizer steps. The token-normalized loss denominator is recomputed for each
+minibatch after shuffling. The second update can therefore use the clipped objective without
+repeating responses. This replaces the prior two-pass notebook default; the old configs remain
+unchanged for reproducibility. It does not establish clipping as the cause of earlier results.
+
+The user chose to start EXAONE from base again, rather than continue checkpoint 140. Total
+training is 300 optimizer steps (150 fresh rollouts), with checkpoints every 20 steps. The
+EXAONE and Llama Drive roots end in `DAPO-MiniBatch300` and `Llama32-3B-MiniBatch300`.
+This is a smaller-scale adaptation of the paper's minibatch schedule; batch sizes, updates per
+rollout and warmup units are not an exact reproduction. CPU tests compare actual gradients
+against an independent clipped objective, check disjoint response use and fixed old-policy
+probabilities, and verify uninterrupted versus resumed weights. GPU validation remains Colab smoke.

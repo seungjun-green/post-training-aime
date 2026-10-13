@@ -1,192 +1,429 @@
-# EXAONE math reasoning: progress
+# Math Post-Training and Cross-Domain Transfer in Qwen2.5-3B
 
-The project uses **LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct** with the original English math datasets. Data preparation, Hugging Face publication, and the full stage-0 baseline evaluation are complete. Fine-tuning has not started.
+**A nine-variant study of structured reasoning SFT, rejection sampling, mixed 3B/7B distillation, and DAPO reinforcement learning**
 
-## Direction and data preparation
+Final experimental report · 14 October 2026
 
-We initially explored Korean translation through hosted APIs and local models. API refusals and translation errors that changed mathematical notation or meaning made that approach unreliable. We switched to English while keeping the same base model.
+## Abstract
 
-Training data was checked against the five evaluation sets using normalization v2 and distinct 8-gram coverage. A training row is removed when it covers at least 70% of an individual evaluation problem's distinct 8-grams; evaluation problems shorter than eight tokens use exact normalized substring matching. Matches are not pooled across evaluation problems. This replaced the overly aggressive rule that removed a row for any single shared 8-gram.
+Can math-only post-training improve a small language model beyond mathematics, and how does that depend on the training recipe? We compare nine Qwen2.5-3B variants: pretrained base and instruct baselines; three supervised fine-tuning (SFT) recipes; and four DAPO reinforcement-learning (RL) runs from different starting checkpoints. The SFT recipes use 989 structured Kimi-inspired s1 examples, 28,267 correct self-generated solutions, or 37,691 mixed 3B/7B solutions. Each RL run performs 300 optimizer updates on a verified-answer math dataset. Greedy evaluation covers AMC 2023, MATH-500, ARC-Challenge, a fixed 1,400-question MMLU-Pro subset, a project-defined non-math BBH subset, and IFEval.
 
-| Training dataset | Original rows | Removed | Retained |
-|---|---:|---:|---:|
-| s1K-1.1 | 1,000 | 4 | 996 |
-| DAPO-Math-17k-Processed | 14,116 | 48 | 14,068 |
+Base + RL improves MATH-500 from 54.8% to 64.2%; mixed-data SFT + RL reaches 67.2%, the best base-derived result. Rejection and mixed-data SFT also improve the base model on all four principal transfer metrics. Additional RL has inconsistent effects: mixed-data SFT + RL improves MATH-500 by 2.6 percentage points but lowers non-math MMLU-Pro by 5.69 points relative to its SFT parent. The original instruct baseline remains strongest on every main benchmark. Training logs show declining SFT loss, increasing RL reward, and decreasing RL token entropy, without corresponding monotonic evaluation improvements. These single-seed results support recipe-dependent transfer, rather than a general claim that math post-training improves all capabilities.
 
-This removes **training-versus-evaluation overlap only**, not duplicates within or between training datasets. All 630 evaluation problems remain unchanged. The seven datasets were uploaded to Hugging Face under `Seungjun/dp_removed_{original_name}`; exact evaluation revisions are recorded in [the dataset suite](configs/english_eval_suite.json).
+[TOC]
 
-## Stage-0 English baseline
+## 1. Motivation and experimental scope
 
-The full run evaluated **630 problems with 6,160 sampled responses** on an NVIDIA RTX PRO 6000 Blackwell 96GB using vLLM. These are the base model's results before project fine-tuning under the original 32-sample AIME/AMC and four-sample MATH-500 protocol. They remain historical results; the new `greedy` and `sample8` profiles require their own matching baseline runs.
+The project asks three practical questions:
 
-| Dataset | Problems | Samples per problem (n) | Pass@1 / avg@n | Pass@4 | Pass@n | Solved at least once |
-|---|---:|---:|---:|---:|---:|---:|
-| AIME 2024 | 30 | 32 | 3.02% | 7.45% | 13.33% | 4/30 |
-| AIME 2025 | 30 | 32 | 3.44% | 9.52% | 23.33% | 7/30 |
-| AIME 2026 | 30 | 32 | 1.46% | 4.28% | 13.33% | 4/30 |
-| AMC 2023 | 40 | 32 | 36.56% | 58.26% | 80.00% | 32/40 |
-| MATH-500 | 500 | 4 | 63.20% | 77.60% | 77.60% | 388/500 |
+1. Which math post-training recipe most improves a 3B pretrained model?
+2. Does mathematical supervision transfer to science, broader knowledge, logical tasks, or instruction following?
+3. How well do training loss, reward, entropy, and response length explain the observed evaluation outcomes?
 
-Pass@1 is estimated from all sampled responses and equals avg@n here; it is not a separate greedy-decoding run. Pass@k estimates the chance of at least one correct answer among k samples. At k = n, it is the fraction of problems solved at least once. It does not measure whether the model can select its correct answer.
+All nine final variants belong to the Qwen2.5-3B family. The pretrained and instruct checkpoints are distinct starting points: the instruct model already includes upstream post-training. It is therefore an external baseline for these experiments, not a compute-matched control for the project’s base-derived models. The architecture and pretrained checkpoint are described in the Qwen2.5 report [1](#ref-1) and [Qwen2.5-3B model card](https://huggingface.co/Qwen/Qwen2.5-3B).
 
-Evaluation uses temperature **1.0**, top-p **0.7**, a **20,480-token output limit**, and a **32,768-token context limit**. Original English problems are passed through the model's native chat template with an English step-by-step instruction. The last balanced `\boxed{...}` answer is graded with `math-verify`; reasoning quality is not separately scored. Settings are in [eval_english.yaml](configs/eval_english.yaml).
+Earlier EXAONE and Korean-translation experiments motivated the project but are outside this final comparison. Their previous report is preserved in [the historical write-up](docs/archive/write-up-exaone-2026-10-03.md).
 
-The supplied `stage0.zip` was checked for complete, unique samples and consistent metadata. Metrics were recomputed and saved answer pairs rescored with no discrepancies. Seven responses reached the output limit, and six lacked a boxed answer. Low AIME accuracy therefore is not explained by widespread truncation or missing answer extraction. The baseline performs substantially better on MATH-500 and AMC23 than on AIME under this protocol.
+### 1.1 Evidence and provenance
 
-Run provenance:
+This report combines three evidence sources:
 
-- Evaluation Git commit: `2e0d65aaf8803aee532eb38c3335736b9e66a18f`.
-- Model revision: `e949c91dec92095908d34e6b560af77dd0c993f8` (loader compatible with the pinned runtime).
-- Runtime: vLLM 0.14.1, PyTorch 2.9.1, Transformers 4.57.6, math-verify 0.9.0; BF16.
-- Results: `/content/drive/MyDrive/LG-AIME-English-Eval-compatible/full/results/stage0`.
+- **Inspected training artifacts:** the supplied `qwen_training_logs_20261013T145235973661Z.zip`. All **369 collected files** passed ZIP integrity and per-file SHA-256 verification. Every expected training history was present, including recovery and continuation runs. Logged losses, gradient norms, and learning rates were finite; step ranges were continuous within each run.
+- **Saved math evaluation metrics:** the ZIP contains final AMC/MATH metrics for all nine selected checkpoints and per-epoch results for rejection and mixed-data SFT. Tables below read these files directly. Raw generated answers were excluded by the collector, so this audit verifies recorded metrics and counts, not the correctness of every individual grading decision.
+- **Reported transfer results and dataset history:** the cross-domain scores were supplied in the project conversation. Their raw RunPod responses, subject breakdowns, and scoring manifests are not in this ZIP. Dataset-construction details are recorded project history unless corroborated by the supplied training reports.
 
-## Current workflow and next step
+The [analysis snapshot](docs/final-report/data/analysis_snapshot.json) preserves the chart inputs, source paths, run configurations, and archive hash. [Reported transfer scores](docs/final-report/data/reported_transfer.json) are explicitly labeled as such. This distinction prevents a recorded aggregate from being mistaken for an independently regraded result.
 
-The additional [temperature-1.0 SFT evaluator](notebooks/evaluate_stage1_sft_temp1.ipynb)
-uses `sample1`: one answer per problem on all five benchmarks, top-p 0.7, and the same
-20,480-token output limit. It selects epoch 5 by default and writes separate results under
-`profiles/sample1/`. This permits checking sampled decoding after the greedy evaluation;
-GPU results from this new profile have not yet been collected. Existing evaluation notebooks
-retain their defaults; the new profile is also available through the shared baseline/SFT CLI.
+## 2. Data construction
 
-A separate [DeepSeek regeneration notebook](notebooks/regenerate_s1_deepseek.ipynb) now prepares
-alternative reasoning targets from the same 996 decontaminated s1K questions. It uses
-`deepseek-v4-pro` with thinking enabled. Following review of the first smoke CSV, the final response
-now explicitly requires Planning, Evaluation (the full worked derivation), Reflection, and
-Exploration sections followed by the final answer. It imposes no prompt-level brevity target or
-answer-correctness filter. `deepseek-v4-pro_answer` is the intended structured training target;
-`deepseek-v4-pro_reasoning` stores raw API thinking separately for inspection.
-The 20-example random smoke cell exports an old/new comparison CSV. The separate full-run cell
-preserves all source columns and adds `deepseek-v4-pro_reasoning` and `deepseek-v4-pro_answer`.
-Concurrent requests, retry journals, and resumable outputs are saved to Drive. Technical failures
-and section-format failures remain visible separately; partial outputs contain all rows with null
-generated fields for failures. The revised prompt starts a fresh run on the same seeded smoke sample.
-This is data generation only: the existing SFT and evaluation implementations are unchanged.
-Local mocked-API tests passed; no live DeepSeek generation has been run during implementation.
+### 2.1 Shared pool for rejection sampling and mixed-data SFT
 
-The subsequent full export used the original generation approach, and the selected training target
-is now **both Pro thinking and answer**, preserving the existing `<think>…</think>` format.
-The separate Llama experiment uses `notebooks/train_stage1_llama31_lora.ipynb` and
-`configs/stage1_sft_llama31_lora.yaml`: Llama 3.1 8B Instruct at revision
-`0e9e39f249a16976918f6564b8830bc894c89659`, with the original DeepSeek reasoning/answer
-columns. LoRA settings are rank 32, alpha 64, dropout 0.05, all seven attention/MLP projections,
-LR 5e-5, five epochs, microbatch 1 and accumulation 16. BF16 base weights remain frozen;
-only adapter matrices train. The native Llama template supervises reasoning, answer and EOT,
-and excludes prompt/padding. Its template trims trailing answer whitespace. Llama tokenization
-recomputes which complete sequences fit 20,480 tokens. No correctness filter is applied.
-Preparation and longest-example GPU smoke training precede the separate full-run cell.
-Adapters and optimizer state are saved each epoch under `sft_llama31_8b_lora_s1k`, alongside
-loss logs, pinned config, parameter report and runtime manifest. This is a new experiment,
-not a modification of prior EXAONE results. CPU adapter-update/reload/resume checks passed;
-gated-tokenizer and GPU validation remain Colab checks. No Llama benchmark result is available yet.
+The recorded pipeline combines MATH train [6](#ref-6), NuminaMath-1.5 [7](#ref-7), and math-only s1K problems [5](#ref-5). It removes proofs, multiple-choice and multi-part problems, and examples lacking a parseable reference answer. Exact normalized deduplication is followed by MinHash near-deduplication, with priority MATH > NuminaMath > s1K.
 
-`train_stage1_sft.ipynb` defaults to `configs/stage1_sft_deepseek_pro.yaml` and starts from the
-original EXAONE base checkpoint with the same five-epoch hyperparameters. The uploaded export
-contains 990 complete pairs and six missing pairs. After excluding missing pairs and full native
-training sequences longer than 20,480 tokens, 718 examples remain (272 overlength exclusions).
-This gives 45 optimizer steps per epoch and 225 across five epochs. New checkpoints/logs use
-`sft_s1k_deepseek_pro`; the old config and outputs remain separate. The dataset's current HF
-revision is resolved to an immutable commit and its exact content is checked and recorded.
-`evaluate_stage1_sft_temp1.ipynb` retests the **previous `sft_s1k/epoch_5` checkpoint** using
-`configs/stage1_sft.yaml` by default. The notebook now offers `MODEL_KIND` (SFT or base)
-and `TEMPERATURE` controls. Base mode loads the pinned original EXAONE model without checkpoint
-checks or budget forcing; SFT applies budget forcing. Both use one answer per problem on all five
-benchmarks. Temperature defaults to 1.0/top-p 0.7; zero uses greedy decoding/top-p 1.0.
-Resolved sampling settings and model modes have separate result/log locations. The `sample1_budget` profile
-adds s1-style early-exit budget forcing with an editable thinking cap (default 18,432, minimum
-zero) and the remaining 2,048 tokens including any injected `</think>` and final-answer cue.
-The notebook saves a resolved budget YAML on Drive, and each budget split has its own output
-directory; the earlier fixed 16,384/4,096 profile is still available. Total continuation tokens
-stay within 20,480. Natural thinking termination is allowed; "Wait" extension is disabled.
-Two-phase requests use the existing continuous vLLM scheduler interface and scoring code.
-Results are isolated by profile, with phase counts and forced-transition flags in raw records.
-An optional five-problem smoke cell precedes the full-run cell. The old R1 checkpoint can be
-tested by selecting its original SFT config. No accuracy gain has been measured yet; local
-mock tests validate the mechanism, and the Colab GPU smoke test remains to be run.
+Decontamination removes a training problem if it covers at least 70% of an individual evaluation problem’s distinct 8-grams, measured relative to the evaluation question. This also catches an evaluation question embedded in a longer prompt. Questions shorter than eight tokens use exact normalized substring matching. The pipeline checks AIME 2024–2026, AMC 2023, and MATH-500, and uses the same method to remove DAPO-Math-17K overlap. Near misses at 50–70% coverage are subsequently removed.
 
-The active notebooks are:
+The recorded intermediate pool contains 380,943 problems. Further selection removes invalid NuminaMath rows, multiple-choice and `other` question types, and the `orca_math`, `cn_k12`, and `metamath` sub-sources. Sampling retains all MATH and s1K examples, targets 10K olympiad and 8K synthetic problems, 3K each from AOPS and Chinese contests, and the smaller inequalities, number-theory, and olympiad-reference groups. Algebra is capped at 40% within each sampled sub-source. The reported final generation pool contains **27,001 problems**.
 
-1. [Prepare English datasets](notebooks/prepare_english_datasets.ipynb): CPU decontamination and Hugging Face upload.
-2. [Evaluate the English baseline](notebooks/evaluate_baseline_english.ipynb): clone/update the project, install the GPU runtime, run a five-problem smoke test, then explicitly enable full evaluation. Includes tqdm progress and saved results on Drive.
-3. [Stage 1 SFT](notebooks/train_stage1_sft.ipynb): prepare and inspect assistant-only loss masks, then explicitly enable five-epoch training and save every epoch checkpoint. No evaluation runs here.
-4. [Stage 1 evaluation](notebooks/evaluate_stage1_sft.ipynb): evaluate epoch 5 on all five benchmarks by default, with epochs 1–4 optional afterward. Both this notebook and the baseline notebook offer `greedy` (temperature 0, one answer, 630 responses/checkpoint) and `sample8` (temperature 1.0/top-p 0.7, eight AIME/AMC answers and four MATH-500 answers, 3,040 responses/checkpoint). Use the same profile for base and SFT comparisons. Continuous batching and the original evaluation environment are retained.
+This collection does not include the pool-construction execution manifest. Some previously documented pre-generation cleaning steps—such as removing leftover translation instructions or correcting malformed gold answers—remain unconfirmed at the execution level. The report therefore treats the 27,001 count and upstream cleaning recipe as reported provenance, while treating final training counts below as verified from saved reports. It does not claim a new contamination audit against the four transfer benchmarks.
 
-Evaluation logic lives in the project rather than the notebook. The preparation notebook still bundles its preparation code. The translation notebooks and old Korean baseline notebook have been removed; `README.md` is retained as historical documentation and contains references to those retired notebooks.
+![Dataset construction](docs/final-report/figures/01_data_pipeline.png)
 
-Stage 1 code is implemented, with settings and execution instructions in the [run guide](docs/stage1_sft.md). CPU preparation using the actual pinned EXAONE tokenizer drops 21 examples exceeding 20,480 tokens and keeps 975, resulting in 61 optimizer steps per epoch and 305 total. The original 996 rows contain 370 `deepseek_grade`-incorrect examples; this grade does not filter training. The [data report](docs/stage1_data_report.json) records the exact dropped IDs and token-length statistics.
+*Figure 1. Construction of the two larger SFT datasets. Pool-stage details follow project history; final row and unique-problem counts come from the training artifacts. Arrows show data dependencies, not a controlled isolation of teacher size.*
 
-Next is GPU validation and fine-tuning, followed by evaluation with the same datasets, prompts, sampling settings, scoring, and runtime. The continuous-batching runner supplies all five benchmarks for each selected epoch. The greedy profile queues up to 64 problems, and sample8 queues up to 16, for the existing 32 GPU response slots. Prompts, seeds, token limits and scoring remain shared. Profiles use isolated `profiles/<profile>/` directories and allow either model to run first, with matching settings required for comparisons; old 32-sample results are preserved without importing them. Settings are recorded in manifests; exact outputs may still vary with GPU numerics and batching. CPU tests cover scoring equivalence on identical responses, out-of-order completion, interruption recovery and source validation; GPU throughput has not yet been measured. Preserve the stage-0 archive and its parent protocol/runtime manifests for comparisons; no fine-tuned results are reported yet.
+### 2.2 Rejection sampling: correct solutions from the 3B base model
 
+The reported generation stage samples eight responses per problem from Qwen2.5-3B base at temperature 1.0. Math-Verify [13](#ref-13) grades extracted final answers. Only correct, normally terminated responses survive. Responses are cut after their final balanced boxed answer, with permitted closing punctuation retained. Further filters remove missing boxes, CJK text, code blocks, chat/role contamination, and very short responses.
 
-## EXAONE DAPO pilot implementation
+Difficulty is estimated using the 3B’s count of correct responses out of eight. All problems solved 1–7 times are eligible; a seeded random third of the 8/8 group is kept; 0/8 problems have no self-generated correct targets. Solutions are processed shortest first and near-deduplicated using 4-gram Jaccard similarity at least 0.7. The cap is three solutions for problems solved 1–6 times and two for problems solved 7–8 times.
 
-`notebooks/train_dapo_exaone.ipynb` now selects the original EXAONE instruction model
-or original `sft_s1k/epoch_5` with a plain `MODEL_KIND` string. The separate DAPO path uses
-the decontaminated English Math-17K export, G=8, 16 retained mixed-correctness groups per
-update, token-normalized policy loss, asymmetric clipping 0.20/0.28, and a soft length penalty
-from 16,384 to 20,480 tokens. It runs the agreed 100-update pilot at LR 1e-6 (20-update warmup),
-saving full checkpoints every 20 updates and raw rollout/reward/filtering diagnostics to Drive.
-No learned reward model, KL reference model, or evaluation-time budget forcing is used.
+The final dataset, [3B self-RFT math](https://huggingface.co/datasets/Seungjun/qwen2.5-3b-self-rft-math), contains **28,267 problem–response pairs across 12,863 unique problems**. Multiple rows can share the same question; these counts refer to different units. The saved training report confirms that all rows were retained without additional length truncation or deduplication during SFT preparation.
 
-The TRL-based trainer uses a custom colocated vLLM path with explicit policy synchronization
-and sleep during optimization. FP32 master parameters/Adam state preserve small updates;
-computation and rollout weights use BF16. The notebook separates preparation, a one-update
-GPU smoke, and the full pilot. Local preparation with the actual EXAONE tokenizer retained
-all 14,068 decontaminated questions (52–1,662 prompt tokens). CPU tests cover reward shaping,
-dynamic refill, clipping/token normalization, training, checkpoint reload and resume.
-Actual vLLM/GPU execution remains a Colab smoke check; no DAPO benchmark gains are claimed.
-See [the run guide](docs/dapo.md) for outputs, storage requirements and runtime details.
+### 2.3 Mixed 3B/7B solutions
 
-The supplied 100-update base-model log completed the pilot. Candidate-answer accuracy was
-17.3% over updates 1–20 and 20.1% over 81–100; changing sampled problems prevent treating this
-as a controlled benchmark gain. The continuation notebook now restores checkpoint 100 with
-optimizer/scheduler/RNG state and extends the same settings to a total of 300 updates. New
-outputs are isolated in `LG-AIME-DAPO-100to300`; the original run is preserved. Only the total
-step budget changes, with the constant-after-warmup schedule retained. CPU tests verify that
-a completed run can be extended without resetting optimizer state or step numbering.
+The teacher is **Qwen2.5-Math-7B-Instruct** [2](#ref-2). The recorded generation recipe applies it to 18,520 problems that the 3B solved only 0–2 times. Problems solved 3–8 times use 3B solutions. For 1–2/8 problems, 3B solutions are preferred and 7B solutions fill remaining slots when available. Problems unsolved by the 3B are admitted only when the teacher solves them at least 2/8 times. Deduplication is applied jointly across solution sources, with at most three retained solutions per hard problem.
 
-### Rollout reuse follow-up
+The final [mixed 3B/7B dataset](https://huggingface.co/datasets/Seungjun/qwen2.5-3b-self-rft-7b-distill-math) contains **37,691 pairs across 14,853 unique problems**, all retained during SFT preparation. We call this model **B-Mix** below. The earlier experiment label “7B knowledge distillation SFT” refers to this mixture, not exclusively teacher-generated responses or soft-logit distillation.
 
-The original one-pass setup evaluates the policy loss before any update to each generated
-batch, so the PPO ratio is approximately one and asymmetric clipping normally does not
-engage. This is a schedule limitation, not a missing clamp in the loss. The training notebook
-now uses `configs/dapo_reuse.yaml`, with two optimizer updates per generated batch and fixed
-generation-time old-policy log-probabilities/advantages across both passes. Other training
-hyperparameters are retained; 100 optimizer updates now mean 50 fresh rollout batches.
-The default starting model is base and the output root is `LG-AIME-DAPO-Reuse2`.
-The original configs and 100-to-300 continuation retain one-pass behavior for reproducibility.
+This comparison changes teacher participation, problem coverage, example count, and training tokens simultaneously. It cannot identify the isolated causal benefit of a 7B teacher. Exact generation-time caps and the teacher’s executed sampling settings are not established by the training-log ZIP: the written generation history and repository templates contain differing caps. They should not be inferred from the SFT run manifest. The final dataset revisions and training targets are pinned and recorded.
 
-Smoke now runs two updates. Checkpoints are allowed only at complete reuse-cycle boundaries
-because TRL does not serialize cached rollouts. Logs identify the rollout's first update,
-policy iteration and freshly generated token count. A zero clip fraction is still possible
-when a policy update is small; inducing nonzero clipping is not itself an optimization goal.
-This change is an experiment, not an established explanation or cure for the benchmark drop.
+### 2.4 Kimi-inspired structured s1 targets
 
-### Llama 3.2 3B DAPO experiment
+The separate s1 branch uses `Seungjun/dp_removed_s1K-1.1`, with `question` as input and the complete `kimi-style-reasoning-answer` column as the supervised response. Of 996 source rows, **989** have usable outputs; seven missing outputs are excluded. No mathematical-correctness filter is recorded for these targets.
 
-`notebooks/train_dapo_llama32_3b.ipynb` starts full-parameter DAPO from the pinned
-`meta-llama/Llama-3.2-3B-Instruct` checkpoint with the two-pass rollout schedule. Algorithm,
-data and training settings match the EXAONE reuse experiment. It uses native Llama formatting,
-a fixed template date and explicit native stop tokens, with separate preparation, smoke and
-full-run cells. Outputs are isolated in `LG-AIME-DAPO-Llama32-3B` on Drive. Local tests exercise
-a small tied-embedding Llama model, clipping, termination accounting and exact resume;
-full-size GPU smoke and benchmark results are pending. No evaluation protocol was changed.
+The responses were generated through DeepSeek and use Planning, Solution and Evaluation, Reflection, Exploration, and a final answer. The intended behaviors are to state an approach, check intermediate work, refine the solution, and consider alternatives. These behaviors are inspired by the long-CoT warmup discussion in [Kimi k1.5 §2.2](https://arxiv.org/html/2501.12599v1#S2.SS2). The fixed headings are this project’s prompt design, not a reproduced official Kimi template [4](#ref-4). The full final response is supervised; the separate API reasoning field is not the training target, and no additional `<think>` wrapper is added.
 
-### Disjoint minibatches and fresh 300-update runs
+### 2.5 What the student actually sees
 
-Following clarification of the paper's training schedule, the current EXAONE and Llama DAPO
-notebooks use `dapo_minibatch.yaml` and `dapo_llama32_3b_minibatch.yaml`. Each rollout yields
-128 retained responses, shuffled into two disjoint minibatches of 64; each answer is used
-once (`num_iterations=1`). Original log-probabilities and group advantages stay fixed across
-the two optimizer steps. The token-normalized loss denominator is recomputed for each
-minibatch after shuffling. The second update can therefore use the clipped objective without
-repeating responses. This replaces the prior two-pass notebook default; the old configs remain
-unchanged for reproducibility. It does not establish clipping as the cause of earlier results.
+The project’s training dataset releases are collected in reference [14](#ref-14).
 
-The user chose to start EXAONE from base again, rather than continue checkpoint 140. Total
-training is 300 optimizer steps (150 fresh rollouts), with checkpoints every 20 steps. The
-EXAONE and Llama Drive roots end in `DAPO-MiniBatch300` and `Llama32-3B-MiniBatch300`.
-This is a smaller-scale adaptation of the paper's minibatch schedule; batch sizes, updates per
-rollout and warmup units are not an exact reproduction. CPU tests compare actual gradients
-against an independent clipped objective, check disjoint response use and fixed old-policy
-probabilities, and verify uninterrupted versus resumed weights. GPU validation remains Colab smoke.
+| SFT dataset | Training pairs | Unique problems | Mean supervised tokens, including EOS | Updates per epoch |
+| --- | ---: | ---: | ---: | ---: |
+| Kimi-style s1 | 989 | Not separately counted in supplied report | 1,732.8 | 62 |
+| 3B rejection sampling | 28,267 | 12,863 | 429.9 | 1,767 |
+| Mixed 3B/7B | 37,691 | 14,853 | 468.0 | 2,356 |
+
+These lengths use the actual Qwen training tokenizer. They are not interchangeable with earlier character counts or token estimates from other tokenizers. Kimi targets are roughly four times as long as rejection-sampling targets, but the dataset contains far fewer examples and receives many fewer updates.
+
+The RL source is `Seungjun/dp_removed_DAPO-Math-17k-Processed`, English train split, with **14,068 rows**. Its resolved revision in the four saved RL manifests is `e3929adfc2916140ce6900ff0fb37de3b30f0f37`. The larger SFT pool was designed to exclude RL overlap; this is not evidence of a separately verified disjointness guarantee for the historical Kimi branch.
+
+## 3. Training design
+
+![Experiment tree](docs/final-report/figures/02_experiment_tree.png)
+
+*Figure 2. The nine final variants. Arrows identify immediate parents used for relative comparisons. The mixed-data epoch-6/7 extension is diagnostic and does not change the epoch-5 parent chosen for B-Mix-RL.*
+
+| Label in this report | Experiment | Selected checkpoint |
+| --- | --- | --- |
+| B0 | Qwen2.5-3B pretrained base | Original HF revision |
+| B-RL | Base + DAPO | RL update 300 |
+| B-Kimi | Base + Kimi-style s1 SFT | SFT epoch 5 |
+| B-RS | Base + 3B rejection SFT | SFT epoch 4 |
+| B-Mix | Base + mixed 3B/7B SFT | SFT epoch 5 |
+| B-RS-RL | B-RS + DAPO | RL update 300 |
+| B-Mix-RL | B-Mix + DAPO | RL update 300 |
+| I0 | Qwen2.5-3B-Instruct | Original HF revision |
+| I-RL | Instruct + DAPO | RL update 300 |
+
+### 3.1 Supervised fine-tuning
+
+SFT updates all model parameters. The input uses the saved Qwen chat template and the project’s English math instruction. The user prompt is masked from the loss, and the response plus end token is supervised through explicitly constructed labels. The low-level Trainer flags alone do not describe this custom masking.
+
+| Setting | Original SFT runs | Mixed-data continuation |
+| --- | --- | --- |
+| Epochs | 5 | 6–7, starting from epoch 5 |
+| Microbatch / accumulation | 1 / 16 | 1 / 16 |
+| Peak learning rate | 1e−5 | 1e−6 |
+| Schedule | Cosine, 5% warmup | New cosine schedule, no warmup |
+| Optimizer | AdamW; β₁=0.9, β₂=0.95, ε=1e−8 | Preserved optimizer state |
+| Weight decay / gradient clipping | 1e−4 / 1.0 | Same |
+| Precision | BF16 compute | Same |
+| Maximum sequence length | 20,480 | Same |
+| Packing / prompt truncation | Disabled / none | Same |
+| Seed | 42 | 42 |
+
+All three preparation reports record zero overlength removals. Checkpoints are saved each epoch. Rejection SFT completes **8,835 updates**; mixed-data SFT completes **11,780**; Kimi SFT completes **310**. The continuation adds **4,712 updates**, ending at global step **16,492**.
+
+**Token-format distinction.** Rejection and mixed-data SFT preserve base Qwen’s `<|endoftext|>` EOS/PAD (151643), appending the original EOS to each completion. The historical Kimi run instead uses the existing `<|im_end|>` token as EOS (151645), with `<|endoftext|>` padding. Its vocabulary and chat template were not expanded, but its EOS setting differs from B0. Evaluations preserve each saved checkpoint’s settings. Consequently the Kimi comparison is not a pure target-style ablation.
+
+### 3.2 DAPO reinforcement learning
+
+The implementation follows the DAPO approach of asymmetric clipping, dynamic sampling, token-level loss, and length-aware reward shaping, adapted to a single-GPU TRL runner. This is a small-model project implementation, not a reproduction of the original large-scale results in the [DAPO paper](https://arxiv.org/abs/2503.14476) [3](#ref-3).
+
+Each rollout samples eight answers per candidate problem. Groups with both correct and incorrect answers are retained; all-correct and all-wrong groups are excluded from the optimizer batch. Sampling refills until 16 groups are retained, giving 128 responses. These are split into two disjoint 64-response optimizer updates, with one pass over the rollout. Thus **300 updates correspond to 150 rollouts and 2,400 retained question selections**, not 2,400 proven unique questions and not an epoch over all 14,068 rows. Additional candidate questions are generated and rejected by dynamic sampling.
+
+| Setting | All four RL runs |
+| --- | --- |
+| Optimizer updates / checkpoint interval | 300 / 20 |
+| Generation temperature / top-p | 1.0 / 1.0 |
+| Group size / retained groups | 8 / 16 |
+| Minibatch responses / updates per rollout | 64 / 2 |
+| Learning rate / warmup | 1e−6 / 20 updates; constant after warmup |
+| AdamW β₁, β₂ / weight decay | 0.9, 0.95 / 0 |
+| Correct / incorrect reward | +1 / −1 |
+| Maximum response / soft-length threshold | 20,480 / 16,384 tokens |
+| Lower / upper clipping epsilon | 0.20 / 0.28 |
+| KL coefficient | 0 |
+| Reward normalization | Within group |
+| Truncated-completion masking | Disabled |
+| Importance-sampling correction cap | 2.0 |
+| Seed | 42 |
+
+For response length L, the shaped reward is the correctness reward minus `max(0, L − 16,384) / 4,096`. Reward therefore combines final-answer correctness and a long-output penalty; it is not itself an accuracy percentage. The verifier checks the extracted final answer, not every reasoning step.
+
+The saved runtime uses PyTorch 2.9.1, Transformers 4.57.6, TRL 0.24.0, vLLM 0.14.1, and Math-Verify 0.9.0. Training ran on an RTX PRO 6000 Blackwell Server Edition, nominally 96 GB. The RL implementation retains FP32 trainable/master weights and optimizer state with BF16 compute and rollout copies, uses gradient checkpointing, and chunks the vocabulary projection to reduce peak memory. Transfer evaluation later used two RTX PRO 6000 Workstation GPUs with one model per GPU.
+
+### 3.3 Recovery and checkpoint selection
+
+I-RL originally stopped after update 43 and recovered from the completed update-40 checkpoint into a separate MemoryFix run. The plotted history uses **original steps 1–40 plus recovered steps 41–300**. Original steps 41–43 are abandoned and excluded. The recovery manifest confirms the parent and boundary.
+
+B-RS epoch 4 and B-Mix epoch 5 were selected after observing AMC/MATH results. B-Mix was also continued through epochs 6–7 with a lower learning rate, but epoch 5 remained the RL starting point. These are exploratory, benchmark-informed checkpoint choices. There is no independent checkpoint-selection validation set, so “best checkpoint” means best under the project’s observed selection process, not an unbiased estimate of an unseen-test optimum.
+
+## 4. Evaluation protocol
+
+All final evaluations use **temperature 0, top-p 1, one response per problem**, and the checkpoint’s saved chat template and EOS. The math and transfer suites use different output caps; they should be compared within their respective protocols.
+
+| Benchmark | Problems per model | Prompting and scoring | New-token cap |
+| --- | ---: | --- | ---: |
+| AMC 2023 [8](#ref-8) | 40 | English math instruction; final-box extraction and mathematical equivalence | 20,480 |
+| MATH-500 [6](#ref-6) | 500 | Same math protocol | 20,480 |
+| ARC-Challenge [9](#ref-9) | 1,172 | Zero-shot generated reasoning and answer letter; answer accuracy | 4,096 |
+| MMLU-Pro custom subset [10](#ref-10) | 1,400 | 100 questions in each of 14 subjects; five official same-subject validation demonstrations | 4,096 |
+| Non-math BBH custom subset [11](#ref-11) | 4,615 | 19 task configurations; three official CoT demonstrations | 4,096 |
+| IFEval [12](#ref-12) | 541 | Original prompts and official strict/loose checks | 4,096 |
+
+The transfer suite totals **7,728 prompts per model and 69,552 across nine models**. It replaces an initially launched full MMLU-Pro run with a smaller, separate evaluation. Question selection uses seed 42 and deterministic SHA-256 ranking of question IDs within each subject, shared by all models. The **non-math MMLU aggregate contains 1,300 questions**, excluding math. Because all subjects have 100 questions, the overall accuracy equals the subject macro average. These scores are explicitly custom-subset results, not full MMLU-Pro leaderboard scores. Prompts follow the [official MMLU-Pro resources](https://github.com/TIGER-AI-Lab/MMLU-Pro).
+
+BBH includes boolean expressions, causal judgement, disambiguation QA, Dyck languages, formal fallacies, hyperbaton, logical deduction with three/five/seven objects, movie recommendation, ruin names, salient translation-error detection, snarks, sports understanding, tracking shuffled objects with three/five/seven objects, web of lies, and word sorting. It excludes arithmetic, counting, geometric shapes, dates, navigation, penguin tables, colored-object reasoning, and temporal sequences. “Non-math” is a project-defined selection; it does not isolate a single pure reasoning faculty. The demonstrations come from [BIG-Bench Hard](https://github.com/suzgunmirac/BIG-Bench-Hard).
+
+ARC reports generated-answer accuracy rather than likelihood-based `acc_norm`. MMLU/BBH extraction failures count as incorrect, without random guessing. IFEval uses its [official verifiable instruction checks](https://github.com/google-research/google-research/blob/master/instruction_following_eval/README.md), including strict and loose prompt- and instruction-level scores. These generative chat-formatted protocols are internal comparisons rather than exact reproductions of every benchmark’s public leaderboard setup.
+
+## 5. Results
+
+### 5.1 Mathematics: gains over base, but no improvement over instruct
+
+| Model | AMC correct / 40 | AMC % | AMC tokens | MATH correct / 500 | MATH % | MATH tokens |
+| --- | --- | --- | --- | --- | --- | --- |
+| B0 | 15 | 37.5 | 1745.6 | 274 | 54.8 | 1444.2 |
+| B-RL | 17 | 42.5 | 2340.3 | 321 | 64.2 | 895.1 |
+| B-Kimi | 10 | 25.0 | 8556.8 | 257 | 51.4 | 6709.7 |
+| B-RS | 15 | 37.5 | 2168.2 | 307 | 61.4 | 1032.2 |
+| B-Mix | 19 | 47.5 | 1702.4 | 323 | 64.6 | 1161.3 |
+| B-RS-RL | 13 | 32.5 | 1323.2 | 331 | 66.2 | 1041.7 |
+| B-Mix-RL | 18 | 45.0 | 1278.1 | 336 | 67.2 | 776.0 |
+| I0 | 21 | 52.5 | 1780.1 | 350 | 70.0 | 780.4 |
+| I-RL | 20 | 50.0 | 1810.4 | 329 | 65.8 | 1012.7 |
+
+*Table 1. Final selected checkpoints. Counts and mean token lengths are read from saved evaluation metrics. Tokens include all responses, correct and incorrect.*
+
+B-RL raises AMC accuracy from **37.5% to 42.5%** and MATH-500 from **54.8% to 64.2%**. Among base-derived models, **B-Mix** gives the best AMC result, **47.5%**, and **B-Mix-RL** gives the best MATH result, **67.2%**. B-RS-RL improves MATH over its SFT parent by **4.8 points**, but loses **5.0 points** on AMC. B-Mix-RL gains **2.6 points** on MATH while losing **2.5 points** on AMC.
+
+The unmodified instruct model remains best on both math benchmarks: **52.5% AMC and 70.0% MATH-500**. I-RL scores **50.0% and 65.8%**, respectively. Thus the experiments demonstrate substantial base-model improvement without surpassing the existing instruct checkpoint.
+
+B-Kimi falls to **25.0% AMC and 51.4% MATH**, while producing much longer outputs. This is a negative result for the complete implemented recipe. It does not isolate the contribution of fixed section headings, target correctness, dataset size, training exposure, or EOS handling.
+
+### 5.2 Transfer: SFT gains, heterogeneous RL effects
+
+| Model | ARC % | MMLU overall % | MMLU non-math % | BBH overall % | BBH macro % | IFEval strict prompt % |
+| --- | --- | --- | --- | --- | --- | --- |
+| B0 | 73.55 | 17.29 | 16.54 | 11.40 | 11.31 | 28.47 |
+| B-RL | 70.48 | 23.21 | 24.08 | 16.27 | 16.02 | 32.53 |
+| B-Kimi | 69.11 | 15.57 | 15.54 | 1.65 | 1.70 | 26.25 |
+| B-RS | 76.11 | 21.93 | 21.08 | 18.14 | 17.99 | 30.31 |
+| B-Mix | 78.16 | 21.71 | 21.15 | 20.00 | 19.80 | 29.21 |
+| B-RS-RL | 77.99 | 21.79 | 21.62 | 19.50 | 19.40 | 31.05 |
+| B-Mix-RL | 75.34 | 15.93 | 15.46 | 18.87 | 18.75 | 28.84 |
+| I0 | 84.90 | 42.43 | 41.62 | 24.29 | 24.17 | 60.44 |
+| I-RL | 84.30 | 41.71 | 41.15 | 21.86 | 21.73 | 60.26 |
+
+*Table 2. User-reported transfer results. MMLU-Pro uses the fixed 100-per-subject subset; BBH uses the custom task selection. IFEval’s main measure here is strict prompt accuracy. MMLU overall and macro scores coincide by design.*
+
+Relative to B0, both B-RS and B-Mix improve ARC, non-math MMLU-Pro, BBH, and strict prompt-level IFEval. B-Mix raises ARC by **4.61 points** and BBH by **8.60 points**. B-RL achieves the highest non-math MMLU-Pro score among base-derived variants, **24.08%**, a **7.54-point** increase over B0, while losing **3.07 points** on ARC.
+
+Additional RL has different effects depending on the parent. B-RS-RL gains slightly on all four displayed transfer metrics. B-Mix-RL loses **2.82 points on ARC**, **5.69 on non-math MMLU-Pro**, **1.13 on BBH**, and **0.37 on strict prompt IFEval**, despite its MATH gain. I-RL also decreases on each main transfer metric, although several differences are small. I0 remains highest on every reported transfer metric.
+
+B-Kimi’s **1.65% BBH** score is unusually low. The supplied aggregate cannot establish how much of this is task performance, output-format mismatch, truncation, or answer extraction. A response-level audit is needed before describing it as a collapse of logical reasoning.
+
+![Changes relative to immediate parents](docs/final-report/figures/03_transfer_deltas.png)
+
+*Figure 3. Percentage-point changes from each immediate parent, not from a shared baseline for every row. Positive cells indicate improvement. MMLU and BBH asterisks identify custom subsets. Small changes are descriptive; no statistical-significance claim is made.*
+
+### 5.3 SFT trajectories: decreasing loss, fluctuating evaluation
+
+![SFT trajectories](docs/final-report/figures/04_sft_trajectories.png)
+
+*Figure 4. Arithmetic means of logged optimizer-step losses within each epoch; these are not end-of-epoch console loss values or a separately evaluated training-set NLL. Kimi loss has its own scale because its targets differ. Stars mark the selected rejection and mixed-data checkpoints. The dashed boundary introduces the lower-learning-rate mixed-data continuation.*
+
+Rejection SFT’s mean logged loss decreases from **0.3483 at epoch 1 to 0.3231 at epoch 5**, but AMC peaks at epoch 4 and then falls. Mixed-data SFT decreases from **0.3053 to 0.2804** over epochs 1–5, remaining near **0.2803** in epochs 6–7. Its MATH score reaches **66.0% at epoch 7**, while AMC falls from **47.5% at epoch 5 to 37.5% at epoch 7**. More epochs therefore produce a trade-off rather than steady improvement on both benchmarks.
+
+Kimi SFT loss also decreases, from **0.7811 to 0.6575**. Its final evaluation decline shows why fitting the supervised target distribution is insufficient evidence of improved benchmark performance. Absolute loss levels across different datasets are not model-quality rankings.
+
+| Run | Epoch | Mean logged loss | AMC % | MATH % |
+| --- | --- | --- | --- | --- |
+| B-RS | 1 | 0.3483 | 27.5 | 58.6 |
+| B-RS | 2 | 0.3374 | 32.5 | 61.4 |
+| B-RS | 3 | 0.3282 | 32.5 | 59.8 |
+| B-RS | 4 | 0.3241 | 37.5 | 61.4 |
+| B-RS | 5 | 0.3231 | 32.5 | 60.8 |
+| B-Mix | 1 | 0.3053 | 37.5 | 64.8 |
+| B-Mix | 2 | 0.2935 | 30.0 | 64.4 |
+| B-Mix | 3 | 0.2848 | 35.0 | 63.6 |
+| B-Mix | 4 | 0.2811 | 40.0 | 64.8 |
+| B-Mix | 5 | 0.2804 | 47.5 | 64.6 |
+| B-Mix | 6 | 0.2803 | 40.0 | 64.2 |
+| B-Mix | 7 | 0.2803 | 37.5 | 66.0 |
+
+*Table 3. Full rejection and mixed-data checkpoint trajectories. The epoch-6/7 continuation uses a new, lower-rate schedule while preserving optimizer state. Kimi has only its final evaluated checkpoint in this study.*
+
+### 5.4 RL trajectories: reward, length, entropy, and candidate correctness
+
+![RL training dynamics](docs/final-report/figures/05_rl_dynamics.png)
+
+*Figure 5. Faint lines are raw observations; solid lines use trailing windows of 10 fresh rollouts for reward/length/candidate correctness and 20 optimizer updates for entropy. Early windows contain fewer observations. Candidate correctness is the pooled correct-response count divided by generated-response count over the window. The vertical dotted line marks I-RL’s recovery boundary. Reward and completion length use available fresh-rollout log entries for retained groups; entropy is logged on every update.*
+
+| Run | Reward | Entropy (nats) | Retained completion tokens | Candidate correct % |
+| --- | --- | --- | --- | --- |
+| B-RL | -0.543 → -0.215 | 0.663 → 0.160 | 776.3 → 873.6 | 6.6 → 19.7 |
+| B-RS-RL | -0.402 → -0.191 | 0.477 → 0.145 | 628.1 → 891.0 | 11.3 → 21.5 |
+| B-Mix-RL | -0.359 → -0.275 | 0.396 → 0.160 | 646.9 → 800.6 | 12.6 → 20.1 |
+| I-RL | -0.295 → -0.247 | 0.258 → 0.184 | 826.8 → 1005.2 | 18.8 → 22.7 |
+
+*Table 4. First 20 versus last 20 optimizer updates, after recovery stitching. Reward and retained-group length average the ten fresh-rollout observations within each window; entropy averages all 20 updates. Candidate correctness pools generated responses before mixed-group filtering.*
+
+All four runs increase logged reward between these windows and reduce token entropy. The strongest reward change is B-RL, **−0.543 → −0.215**; its entropy decreases **0.663 → 0.160 nats**. Retained-group completion length increases in all four early/late comparisons. Negative reward values are compatible with learning because incorrect answers receive −1 and the logged statistic concerns selected mixed groups.
+
+Candidate correctness rises too, but this is a training diagnostic on changing sampled problems. It is neither fixed-set validation accuracy nor pass@8. The selection process changes which groups reach the optimizer, and one rollout feeds two updates. Repeated rollout-level fields must not be counted twice. Lower entropy is an observed behavioral change; these data do not establish it as the cause of transfer losses.
+
+![Reward changes versus evaluation changes](docs/final-report/figures/06_reward_vs_results.png)
+
+*Figure 6. Within each RL run, the small reward marker represents the early window and the large marker the late window. Evaluation panels show final-minus-parent percentage-point changes on separate axes. Reward is not numerically comparable to accuracy. Improving the training objective does not ensure gains on every held-out benchmark.*
+
+### 5.5 Response length and efficiency
+
+![Accuracy versus output length](docs/final-report/figures/07_accuracy_length.png)
+
+*Figure 7. Greedy math evaluation: mean tokens versus accuracy, with logarithmic token axes. Arrows connect immediate parents to their trained variants. Square markers are the original base/instruct checkpoints. This is an outcome comparison, not a causal estimate of the value of an extra generated token.*
+
+B-Kimi uses **8,556.8 mean tokens on AMC** and **6,709.7 on MATH**, roughly **4.9× and 4.6× B0**, while scoring lower. B-RL improves MATH while reducing mean length from **1,444.2 to 895.1 tokens**. B-Mix-RL improves its parent’s MATH score while reducing mean length from **1,161.3 to 776.0 tokens**. Long output is therefore not a reliable proxy for effective reasoning in this comparison.
+
+The apparent increase in sampled training-rollout length and decrease in some greedy benchmark lengths is not a contradiction: the prompts, filtering, decoding temperature, and response populations differ. Output tokens are an inference-length proxy; the report does not equate them with measured latency or monetary cost.
+
+## 6. Discussion
+
+**Verified short solutions are a useful baseline.** Rejection SFT improves MATH and all four main transfer measures over B0 without imposing a long structured response format. Mixed-data SFT broadens coverage and improves several results further. Because its data size and composition change together, the experiment supports the combined recipe, not a teacher-size-only explanation.
+
+**RL’s value depends on the starting model and target metric.** The same nominal 300-update recipe benefits base MATH strongly, yields smaller MATH gains after SFT, and lowers instruct MATH. Transfer is similarly heterogeneous. Neither “RL always helps” nor “RL always hurts general ability” fits these results.
+
+**Optimization metrics and evaluation answer different questions.** SFT loss measures fit to the target responses. RL reward reflects shaped correctness on selected training rollouts. Neither includes the full set of constraints represented by science questions, unfamiliar answer formats, logical tasks, and instruction-following checks. Their improvement should be reported alongside evaluation, not substituted for it.
+
+**The instruct baseline is an essential reference.** I0 outperforms every project variant on the main math and transfer benchmarks. The project’s strongest claim is that several recipes substantially improve a pretrained 3B checkpoint. It does not show that this amount of math post-training replaces upstream instruction tuning or produces a superior general assistant.
+
+## 7. Limitations
+
+1. **One seed and exploratory selection.** There are no repeated-seed estimates. SFT checkpoints and extra epochs were chosen with benchmark feedback, making final math scores selection-sensitive. No formal significance test is reported.
+2. **Small and custom evaluation sets.** AMC has 40 problems: one answer changes accuracy by 2.5 points. Each MMLU subject has 100 questions: one answer changes its subject score by one point. The custom MMLU and BBH results cannot be substituted for full-benchmark scores.
+3. **Unequal data and compute.** SFT datasets differ in size, difficulty, response length, source quality, and update count. Mixed-data SFT is not a controlled pure-distillation ablation. Even at 300 RL updates, dynamic sampling produces different candidate-generation workloads.
+4. **Kimi recipe confounds.** Dataset size, lack of correctness filtering, target format, and EOS setting all differ. Its result cannot establish that planning/reflection/exploration themselves are harmful.
+5. **Scoring and output-format uncertainty.** Math checks final answers rather than proof validity. Transfer scoring can be affected by extraction and truncation. The raw transfer records were not supplied for this write-up, so the unusually low Kimi BBH result remains unaudited at response level.
+6. **Incomplete upstream generation provenance.** Final training rows and revisions are pinned, but the collected artifacts do not settle every pool-cleaning action or executed generation parameter. Reported decontamination is not proof of no semantic overlap, and transfer-benchmark overlap was not newly checked here.
+7. **No causal attribution to entropy or length.** Their changes accompany training; the experiments do not independently manipulate them. Adaptive training-rollout correctness cannot establish improved held-out generalization.
+
+## 8. Conclusion
+
+Math-only post-training produced useful but uneven gains in Qwen2.5-3B. Rejection sampling and mixed 3B/7B SFT improved several capabilities beyond mathematics. DAPO substantially improved the pretrained base model’s MATH score, but its incremental benefit depended on the starting checkpoint and benchmark. The structured Kimi-style recipe increased generated length without improving final accuracy, while the original instruct model remained strongest overall.
+
+The practical lesson is to evaluate the complete recipe: target data, response format, training exposure, checkpoint choice, and decoding/scoring protocol. Declining loss, increasing reward, and longer reasoning are not sufficient success criteria. In this study, the most informative evidence is their relationship to both math accuracy and cross-domain behavior.
+
+## Appendix A. Full IFEval results
+
+| Model | Prompt strict % | Instruction strict % | Prompt loose % | Instruction loose % |
+| --- | --- | --- | --- | --- |
+| B0 | 28.47 | 39.81 | 33.64 | 44.96 |
+| B-RL | 32.53 | 44.00 | 36.04 | 48.32 |
+| B-Kimi | 26.25 | 39.81 | 26.99 | 40.77 |
+| B-RS | 30.31 | 43.05 | 37.71 | 49.64 |
+| B-Mix | 29.21 | 41.37 | 36.78 | 48.08 |
+| B-RS-RL | 31.05 | 42.09 | 38.26 | 49.04 |
+| B-Mix-RL | 28.84 | 41.73 | 34.75 | 47.84 |
+| I0 | 60.44 | 70.62 | 64.14 | 73.50 |
+| I-RL | 60.26 | 69.78 | 63.22 | 72.66 |
+
+*Strict/loose and prompt/instruction metrics measure different criteria; no single column represents all instruction-following behavior. These are the supplied aggregate results.*
+
+## Appendix B. RL optimizer diagnostics
+
+![RL optimizer diagnostics](docs/final-report/figures/08_rl_diagnostics.png)
+
+*Faint raw traces and 20-update trailing means. Policy loss is not a supervised cross-entropy or accuracy measure; its sign and magnitude should not be read as a standalone success criterion. The learning-rate schedules overlap because the four runs share the same schedule. Logged clipping fractions remain small in these runs.*
+
+## Appendix C. Reproducibility and artifact map
+
+The report and charts can be regenerated with:
+
+```bash
+python -m pip install -r requirements-writeup.txt
+python scripts/build_final_writeup.py
+```
+
+To re-audit and rebuild the analysis snapshot from the original supplied archive:
+
+```bash
+python scripts/build_final_writeup.py --archive /path/to/qwen_training_logs_20261013T145235973661Z.zip
+```
+
+The builder verifies the archive, selects the exact math checkpoint files, stitches I-RL at step 40, checks continuous step ranges, and produces the following artifacts:
+
+| Artifact | Purpose |
+| --- | --- |
+| [write-up.md](write-up.md) | This report, generated from the report template |
+| [write-up.html](write-up.html) | Standalone reading version with embedded chart images |
+| [Report template](docs/final-report/write-up.template.md) | Editable narrative with generated-table placeholders |
+| [Figure directory](docs/final-report/figures/) | All eight charts/diagrams as PNG and editable vector SVG |
+| [Analysis snapshot](docs/final-report/data/analysis_snapshot.json) | Source-attributed chart data, configurations and source-archive checksum |
+| [Derived metrics](docs/final-report/data/derived_metrics.json) | Final score inputs and aggregation definitions |
+| [Reported transfer table](docs/final-report/data/reported_transfer.json) | Exact user-supplied percentages and provenance note |
+| [Training-log collector](notebooks/collect_qwen_training_logs.ipynb) | CPU Colab collection of source logs and small metadata |
+| [Experiment progress and paths](progress.md) | Notebook links and exact training/evaluation Drive paths |
+
+**Pinned starting models:** Qwen2.5-3B at `3aab1f1954e9cc14eb9509a215f9e5ca08227a9b`; Qwen2.5-3B-Instruct at `aa8e72537993ba99e69dfaafa59ed015b17504d1`.
+
+**Pinned SFT datasets:** Kimi-style s1 at `636ecf409774771afb0bf10a436f4b1e608b5f29`; rejection SFT at `96c5f70e37098a9f41f5e44adc4e906ee3f5ef15`; mixed 3B/7B SFT at `d13f567cd42e7f7e182ea5125a288d86cbefbe67`. Full training identities, runtime versions, and recovered/continued parent paths are retained in the analysis snapshot.
+
+**Evaluation settings:** [math comparison configuration](configs/qwen_compare_eval.yaml), [selected SFT + RL comparison](configs/qwen_sft_rl_eval.yaml), and [MMLU-100 transfer configuration](configs/qwen_transfer_eval_mmlu100.yaml). Cross-domain outputs were configured for `Seungjun/qwen25-3b-transfer-eval-results`; upload success or current repository visibility is not assumed by this report.
+
+## References
+
+<a id="ref-1"></a>
+**[1]** Qwen et al. (2024). *Qwen2.5 Technical Report*. arXiv:2412.15115. [Paper](https://arxiv.org/abs/2412.15115). Model releases: [Qwen2.5-3B](https://huggingface.co/Qwen/Qwen2.5-3B) and [Qwen2.5-3B-Instruct](https://huggingface.co/Qwen/Qwen2.5-3B-Instruct).
+{: .reference}
+
+<a id="ref-2"></a>
+**[2]** An Yang et al. (2024). *Qwen2.5-Math Technical Report: Toward Mathematical Expert Model via Self-Improvement*. arXiv:2409.12122. [Paper](https://arxiv.org/abs/2409.12122). Teacher release: [Qwen2.5-Math-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-Math-7B-Instruct).
+{: .reference}
+
+<a id="ref-3"></a>
+**[3]** Qiying Yu et al. (2025). *DAPO: An Open-Source LLM Reinforcement Learning System at Scale*. arXiv:2503.14476. [Paper](https://arxiv.org/abs/2503.14476).
+{: .reference}
+
+<a id="ref-4"></a>
+**[4]** Kimi Team et al. (2025). *Kimi k1.5: Scaling Reinforcement Learning with LLMs*. arXiv:2501.12599. [Paper](https://arxiv.org/abs/2501.12599). [Version 1, §2.2](https://arxiv.org/html/2501.12599v1#S2.SS2).
+{: .reference}
+
+<a id="ref-5"></a>
+**[5]** Niklas Muennighoff et al. (2025). *s1: Simple test-time scaling*. arXiv:2501.19393. [Paper](https://arxiv.org/abs/2501.19393); [official code and data resources](https://github.com/simplescaling/s1).
+{: .reference}
+
+<a id="ref-6"></a>
+**[6]** Dan Hendrycks et al. (2021). *Measuring Mathematical Problem Solving With the MATH Dataset*. arXiv:2103.03874. [Paper](https://arxiv.org/abs/2103.03874). MATH-500 release used as the upstream evaluation source: [HuggingFaceH4/MATH-500](https://huggingface.co/datasets/HuggingFaceH4/MATH-500).
+{: .reference}
+
+<a id="ref-7"></a>
+**[7]** Project Numina / AI-MO. *NuminaMath-1.5*. [Dataset and documentation](https://huggingface.co/datasets/AI-MO/NuminaMath-1.5).
+{: .reference}
+
+<a id="ref-8"></a>
+**[8]** math-ai. *AMC 2023 dataset release*. [math-ai/amc23](https://huggingface.co/datasets/math-ai/amc23).
+{: .reference}
+
+<a id="ref-9"></a>
+**[9]** Peter Clark et al. (2018). *Think you have Solved Question Answering? Try ARC, the AI2 Reasoning Challenge*. arXiv:1803.05457. [Paper](https://arxiv.org/abs/1803.05457); [dataset](https://huggingface.co/datasets/allenai/ai2_arc).
+{: .reference}
+
+<a id="ref-10"></a>
+**[10]** Yubo Wang et al. (2024). *MMLU-Pro: A More Robust and Challenging Multi-Task Language Understanding Benchmark*. arXiv:2406.01574. [Paper](https://arxiv.org/abs/2406.01574); [official repository](https://github.com/TIGER-AI-Lab/MMLU-Pro).
+{: .reference}
+
+<a id="ref-11"></a>
+**[11]** Mirac Suzgun et al. (2022). *Challenging BIG-Bench Tasks and Whether Chain-of-Thought Can Solve Them*. arXiv:2210.09261. [Paper](https://arxiv.org/abs/2210.09261); [official BBH tasks and prompts](https://github.com/suzgunmirac/BIG-Bench-Hard).
+{: .reference}
+
+<a id="ref-12"></a>
+**[12]** Jeffrey Zhou et al. (2023). *Instruction-Following Evaluation for Large Language Models*. arXiv:2311.07911. [Paper](https://arxiv.org/abs/2311.07911); [official IFEval implementation](https://github.com/google-research/google-research/tree/master/instruction_following_eval).
+{: .reference}
+
+<a id="ref-13"></a>
+**[13]** Hugging Face. *Math-Verify*. [Source and documentation](https://github.com/huggingface/Math-Verify). Version 0.9.0.
+{: .reference}
+
+<a id="ref-14"></a>
+**[14]** Seungjun. *Project training datasets*. Hugging Face dataset releases: [Kimi-style s1 targets](https://huggingface.co/datasets/Seungjun/dp_removed_s1K-1.1), [3B rejection-sampling targets](https://huggingface.co/datasets/Seungjun/qwen2.5-3b-self-rft-math), [mixed 3B/7B targets](https://huggingface.co/datasets/Seungjun/qwen2.5-3b-self-rft-7b-distill-math), and [processed DAPO training problems](https://huggingface.co/datasets/Seungjun/dp_removed_DAPO-Math-17k-Processed). Exact training revisions are recorded in Appendix C and the analysis snapshot.
+{: .reference}
